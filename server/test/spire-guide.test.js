@@ -61,3 +61,39 @@ test('GET /api/spire/guide answers with the lab\'s settings filled in, and repor
     assert.match(g.problems[0], /SPIRE_SERVER_URL must be an https URL/);
   } finally { await bad.close(); }
 });
+
+test('GET/POST /api/spire/target: the choice is a runtime switch, cluster refuses (409) without a configured URL, and the guide follows it', async () => {
+  const lab = await startLab({ env: baseEnv({ PUBLIC_URL: 'https://issuer.example', SPIRE_SERVER_URL: 'https://host.example/spire' }) });
+  try {
+    const v = await (await lab.get('/api/spire/target')).json();
+    assert.equal(v.target, 'cluster');
+    assert.equal(v.options.cluster.available, true);
+    assert.ok((await (await lab.get('/api/spire/guide')).text()).includes('SPIRE_SERVER_URL=https://host.example/spire'));
+
+    const sw = await lab.post('/api/spire/target', { target: 'docker' });
+    assert.equal(sw.status, 200);
+    assert.match(sw.headers.get('cache-control'), /no-store/);
+    assert.equal((await sw.json()).target, 'docker');
+    const g = await (await lab.get('/api/spire/guide')).json();
+    assert.equal(g.target, 'docker');
+    assert.equal(JSON.stringify(g).includes('SPIRE_SERVER_URL=https://host.example/spire'), false, 'the docker guide does not borrow the cluster URL');
+
+    const bad = await lab.post('/api/spire/target', { target: 'k8s' });
+    assert.equal(bad.status, 400);
+    assert.equal((await bad.json()).error, 'bad_target');
+
+    const cmd = await (await lab.get('/api/spire/command')).json();
+    assert.ok(Array.isArray(cmd.kubectl) && cmd.kubectl.every((c) => c.command.startsWith('kubectl ')));
+  } finally { await lab.close(); }
+
+  const none = await startLab({ env: baseEnv({ PUBLIC_URL: 'https://issuer.example' }) });
+  try {
+    assert.equal((await (await none.get('/api/spire/target')).json()).target, 'docker');
+    const r = await none.post('/api/spire/target', { target: 'cluster' });
+    assert.equal(r.status, 409);
+    const b = await r.json();
+    assert.equal(b.error, 'cluster_not_configured');
+    assert.match(b.message, /SPIRE_SERVER_URL/);
+    assert.equal((await (await none.get('/api/spire/target')).json()).target, 'docker', 'the refused switch changed nothing');
+  } finally { await none.close(); }
+});
