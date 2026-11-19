@@ -53,3 +53,15 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywh
 .results th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .results__sub { color: var(--muted); }
 .results .chip { white-space: nowrap; }
+
+/* SPIRE server control card: action row and per-check table reuse .results. */
+.spire-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.spire-actions button { min-height: 36px; }
+.spire-table { overflow-x: auto; }
+.spire-guide { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.spire-guide > summary { cursor: pointer; font-weight: 600; font-size: 0.9375rem; }
+.spire-guide ol { margin: 8px 0 0; padding-left: 1.25rem; display: grid; gap: 12px; }
+.spire-guide li p { margin: 4px 0; font-size: 0.875rem; line-height: 1.45; }
+.spire-code { margin: 6px 0 0; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-mono); font-size: 0.8125rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.spire-table .results { min-width: 0; table-layout: auto; }
+.spire-table .results th, .spire-table .results td { padding: 6px 8px; }
