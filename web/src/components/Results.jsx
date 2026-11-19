@@ -9,7 +9,7 @@ export default function Results({ run, real, busy, onPresent }) {
   return (
     <section data-testid="results">
       <div className="section-head">
-        <h2 className="section-head__title">Present to the gateway</h2>
+        <h2 className="section-head__title"><span className="step-num" aria-hidden="true">4</span>Present to the gateway</h2>
         <button type="button" className="primary" data-testid="present" disabled={busy} onClick={onPresent}>
           {busy ? "Presenting…" : real ? "Present to the gateway" : "Rehearse against the mock gateway"}
         </button>

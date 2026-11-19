@@ -75,7 +75,7 @@ export default function SpireCard({ busy, setBusy, onError }) {
 
   return (
     <div className="card card--neutral" data-testid="spire-card">
-      <h2 className="card__title">SPIRE server control <Chip ok={testResult ? testResult.ok : null}>{testResult ? (testResult.ok ? "pass" : "fail") : "not tested"}</Chip></h2>
+      <h2 className="card__title"><span className="step-num" aria-hidden="true">2</span>SPIRE server control <Chip ok={testResult ? testResult.ok : null}>{testResult ? (testResult.ok ? "pass" : "fail") : "not tested"}</Chip></h2>
       <p className="card__note">This lab signs its own test JWT-SVIDs; it is not SPIRE. Choose which SPIRE to check: a throwaway one in Docker on this machine, or the one in your cluster, set with <code>SPIRE_SERVER_URL</code> in this lab's <code>.env</code> (a path prefix such as <code>https://spire.example/spire</code> is fine).</p>
       <div className="spire-target" data-testid="spire-target">
         <span id="spire-target-label" className="spire-target__label">SPIRE to use</span>
