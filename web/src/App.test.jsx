@@ -139,3 +139,86 @@ describe("tokens", () => {
     expect(card).toHaveTextContent("spiffe://lab.example/ns/agents/sa/mcp-agent");
   });
 });
+
+describe("the SPIRE server control card", () => {
+  const SPIRE_OK = { ok: true, tested: "local", testedAt: "2026-11-19T00:00:00.000Z", checks: [
+    { name: "container", ok: true, detail: "spire-demo-server is running", ms: 3 },
+    { name: "api-port", ok: true, detail: "127.0.0.1:18081 accepts connections", ms: 1 },
+  ] };
+  const SPIRE_FAIL = { ok: false, tested: "local", testedAt: "2026-11-19T00:00:00.000Z", checks: [
+    { name: "container", ok: false, detail: "spire-demo-server is not running (Docker may be unavailable)", ms: 2 },
+    { name: "api-port", ok: false, detail: "127.0.0.1:18081 is not accepting connections", ms: 1 },
+  ] };
+
+  it("renders the card, loads the education command, and the test button calls POST /api/spire/test with pass chips", async () => {
+    const calls = stub(NO_SETTINGS);
+    globalThis.fetch = vi.fn(async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ url, body });
+      const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
+      if (url === "/api/info") return json(NO_SETTINGS);
+      if (url === "/api/shelf") return json({ shelfUrl: null });
+      if (url === "/api/mint") return json({ source: "mock", audience: NO_SETTINGS.config.audience, tokens: TOKENS });
+      if (url === "/api/spire/command") return json({ command: "docker run -d --name spire-demo-server -p 127.0.0.1:18081:8080 ghcr.io/spiffe/spire-server:1.7.2 …", container: "spire-demo-server", image: "ghcr.io/spiffe/spire-server:1.7.2", port: 18081 });
+      if (url === "/api/spire/test") return json(SPIRE_OK);
+      return json({}, 404);
+    });
+    render(<App />);
+    expect(await screen.findByTestId("spire-card")).toBeInTheDocument();
+    expect(screen.getByTestId("spire-command")).toHaveTextContent("docker run -d --name spire-demo-server");
+    expect(screen.getByTestId("spire-card")).toHaveTextContent("not tested");
+    fireEvent.click(screen.getByTestId("spire-test"));
+    const checks = await screen.findByTestId("spire-checks");
+    expect(calls.filter((c) => c.url === "/api/spire/test").at(-1)).toBeTruthy();
+    expect(within(screen.getByTestId("spire-check-container")).getByText("pass")).toBeInTheDocument();
+    expect(within(screen.getByTestId("spire-check-api-port")).getByText("127.0.0.1:18081 accepts connections")).toBeInTheDocument();
+    expect(within(checks).getAllByText("pass")).toHaveLength(2);
+    // with a pass, Start stays disabled
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+  });
+
+  it("shows fail chips, enables Start only after a failed LOCAL test, and docker-unavailable is a named notice", async () => {
+    stub(NO_SETTINGS);
+    globalThis.fetch = vi.fn(async (url, init = {}) => {
+      const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
+      if (url === "/api/info") return json(NO_SETTINGS);
+      if (url === "/api/shelf") return json({ shelfUrl: null });
+      if (url === "/api/mint") return json({ source: "mock", audience: NO_SETTINGS.config.audience, tokens: TOKENS });
+      if (url === "/api/spire/command") return json({ command: "docker run …" });
+      if (url === "/api/spire/test") return json(SPIRE_FAIL);
+      if (url === "/api/spire/start") return json({ ok: false, reason: "docker-unavailable", message: "Docker is not reachable from the lab." });
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByTestId("spire-card");
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    expect(within(screen.getByTestId("spire-checks")).getAllByText("fail")).toHaveLength(2);
+    expect(screen.getByTestId("spire-start")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("spire-start"));
+    expect(await screen.findByTestId("spire-docker-unavailable")).toHaveTextContent("Docker is not reachable");
+    expect(screen.getByTestId("spire-card")).toHaveTextContent("fail"); // title chip stays at fail
+  });
+
+  it("buttons disable while a request runs", async () => {
+    stub(NO_SETTINGS);
+    globalThis.fetch = vi.fn(async (url) => {
+      const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
+      if (url === "/api/info") return json(NO_SETTINGS);
+      if (url === "/api/shelf") return json({ shelfUrl: null });
+      if (url === "/api/mint") return json({ source: "mock", audience: NO_SETTINGS.config.audience, tokens: TOKENS });
+      if (url === "/api/spire/command") return json({ command: "docker run …" });
+      if (url === "/api/spire/test") return new Promise((r) => setTimeout(() => r(json(SPIRE_OK)), 20));
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByTestId("spire-card");
+    fireEvent.click(screen.getByTestId("spire-test"));
+    expect(screen.getByTestId("spire-test")).toBeDisabled();
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+    expect(screen.getByTestId("spire-restart")).toBeDisabled();
+    await screen.findByTestId("spire-checks");
+    expect(screen.getByTestId("spire-test")).not.toBeDisabled();
+  });
+});
