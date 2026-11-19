@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   createSpireControl, dockerRunArgs, inspectJwks, normalizeBase, parseSpireSettings, serverConfText,
-  COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT,
+  TargetError, K8S_COMMANDS, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT,
 } from '../src/spireControl.js';
 import { baseEnv } from './helpers.js';
 
@@ -140,13 +140,13 @@ test('start without docker: named docker-unavailable reason, no docker run attem
   assert.equal(rr.reason, 'docker-unavailable');
 });
 
-test('start/restart refuse when SPIRE_SERVER_URL is set: the card is testing YOUR SPIRE, and starts nothing', async () => {
+test('start/restart refuse on the cluster target: this lab holds no cluster credentials, so it starts nothing there', async () => {
   const run = runningContainer();
   const ctl = createSpireControl({ env: baseEnv({ SPIRE_SERVER_URL: 'https://spire.example' }), dataDir: os.tmpdir(), run, fetchImpl: ready });
   for (const r of [await ctl.start(), await ctl.restart()]) {
     assert.equal(r.ok, false);
     assert.equal(r.reason, 'not-local');
-    assert.match(r.message, /SPIRE_SERVER_URL is set/);
+    assert.match(r.message, /cluster SPIRE is selected/);
   }
   assert.equal(run.calls.length, 0, 'not even docker info was run');
 });
@@ -268,4 +268,88 @@ test('a failed fetch names its real reason (Node hides it in the cause), without
   assert.equal(r2.checks[0].detail, 'getaddrinfo ENOTFOUND spire.example');
   const local = await createSpireControl({ env: baseEnv(), dataDir: os.tmpdir(), run: runningContainer(), fetchImpl: withCause }).test();
   assert.match(local.checks[1].detail, /ECONNREFUSED/);
+});
+
+// ---- target selector: Docker demo vs the cluster SPIRE ----
+const CLUSTER = { SPIRE_SERVER_URL: 'https://spire.example/spire' };
+const okRemote = async (url) => {
+  const u = String(url);
+  if (u.endsWith('/.well-known/openid-configuration')) return { status: 200, json: async () => ({ issuer: 'https://spire.example', jwks_uri: 'https://spire.example/keys' }) };
+  return { status: 200, json: async () => KEYS };
+};
+
+test('target: defaults follow the configuration (no URL = docker, a URL = cluster) and the view says why cluster is unavailable', () => {
+  const none = createSpireControl({ env: baseEnv(), dataDir: os.tmpdir() }).targetView();
+  assert.equal(none.target, 'docker');
+  assert.equal(none.options.cluster.available, false);
+  assert.match(none.options.cluster.reason, /SPIRE_SERVER_URL is not set/);
+  const set = createSpireControl({ env: baseEnv(CLUSTER), dataDir: os.tmpdir() }).targetView();
+  assert.equal(set.target, 'cluster');
+  assert.equal(set.options.cluster.available, true);
+  assert.equal(set.options.cluster.reason, null);
+  assert.equal(set.serverUrl, 'https://spire.example/spire');
+});
+
+test('target: cluster cannot be selected without a valid SPIRE_SERVER_URL (409, state unchanged); a bad value is a 400', () => {
+  const ctl = createSpireControl({ env: baseEnv(), dataDir: os.tmpdir() });
+  assert.throws(() => ctl.setTarget('cluster'), (e) => e instanceof TargetError && e.status === 409 && e.code === 'cluster_not_configured');
+  assert.equal(ctl.targetView().target, 'docker');
+  const bad = createSpireControl({ env: baseEnv({ SPIRE_SERVER_URL: 'ftp://agent.example' }), dataDir: os.tmpdir() });
+  assert.throws(() => bad.setTarget('cluster'), (e) => e.status === 409);
+  for (const v of ['k8s', '', undefined, null, 7, {}]) assert.throws(() => ctl.setTarget(v), (e) => e.status === 400 && e.code === 'bad_target');
+});
+
+test('target: switching to docker makes test() check the local container only, and no cluster URL is fetched', async () => {
+  const urls = [];
+  const fetchImpl = async (u) => { urls.push(String(u)); return { status: 200, json: async () => ({}) }; };
+  const ctl = createSpireControl({ env: baseEnv(CLUSTER), dataDir: os.tmpdir(), run: runningContainer(), fetchImpl });
+  assert.equal(ctl.targetView().target, 'cluster');
+  ctl.setTarget('docker');
+  const r = await ctl.test();
+  assert.equal(r.tested, 'local');
+  assert.equal(r.target, 'docker');
+  assert.ok(urls.length > 0 && urls.every((u) => u.startsWith('http://127.0.0.1:')), `only loopback was fetched: ${urls.join(' ')}`);
+});
+
+test('target: switching back to cluster tests the configured SPIRE and fetches nothing from loopback', async () => {
+  const urls = [];
+  const fetchImpl = async (u, o) => { urls.push(String(u)); return okRemote(u, o); };
+  const ctl = createSpireControl({ env: baseEnv(CLUSTER), dataDir: os.tmpdir(), run: runningContainer(), fetchImpl });
+  ctl.setTarget('docker');
+  ctl.setTarget('cluster');
+  const r = await ctl.test();
+  assert.equal(r.tested, 'remote');
+  assert.equal(r.target, 'cluster');
+  assert.equal(r.ok, true);
+  assert.ok(urls.length > 0 && urls.every((u) => u.startsWith('https://spire.example')), urls.join(' '));
+});
+
+test('target: docker selected while a cluster URL is set still starts the local container', async () => {
+  const run = runningContainer();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spire-tg-'));
+  const ctl = createSpireControl({ env: baseEnv(CLUSTER), dataDir: dir, run, fetchImpl: ready, sleep: noSleep });
+  ctl.setTarget('docker');
+  const r = await ctl.start();
+  assert.equal(r.reason, undefined);
+  assert.equal(r.started, true);
+  assert.ok(run.calls.some((c) => c[0] === 'docker' && c[1] === 'run'));
+});
+
+test('target: an invalid URL with no choice made reports a settings failure, never the local container', async () => {
+  const run = runningContainer();
+  const ctl = createSpireControl({ env: baseEnv({ SPIRE_SERVER_URL: 'ftp://agent.example' }), dataDir: os.tmpdir(), run, fetchImpl: ready });
+  const r = await ctl.test();
+  assert.equal(r.ok, false);
+  assert.equal(r.tested, 'invalid');
+  assert.equal(r.checks[0].name, 'settings');
+  assert.equal(run.calls.length, 0);
+});
+
+test('the kubectl commands are placeholders only: no real namespace, host or secret, and nothing that deletes', () => {
+  assert.ok(K8S_COMMANDS.length >= 3);
+  for (const c of K8S_COMMANDS) {
+    assert.match(c.command, /^kubectl /);
+    assert.match(c.command, /<namespace>/);
+    assert.doesNotMatch(c.command, /\bdelete\b|\bsecret|token|--force/i);
+  }
 });

@@ -149,6 +149,18 @@ export function inspectJwks(doc) {
   return { ok: true, detail: `${doc.keys.length} key${doc.keys.length === 1 ? '' : 's'} (${algs})` };
 }
 
+export class TargetError extends Error {
+  constructor(code, detail, status = 409) { super(detail); this.code = code; this.status = status; }
+}
+
+// Starting or restarting a SPIRE on Kubernetes needs cluster credentials, which this lab never holds. The card shows these instead, with placeholders.
+export const K8S_COMMANDS = [
+  { label: 'See the SPIRE pods', command: 'kubectl -n <namespace> get pods | grep spire' },
+  { label: 'Start (scale up)', command: 'kubectl -n <namespace> scale statefulset/spire-server --replicas=1' },
+  { label: 'Restart', command: 'kubectl -n <namespace> rollout restart statefulset/spire-server' },
+  { label: 'Is it healthy?', command: 'kubectl -n <namespace> exec spire-server-0 -c spire-server -- /opt/spire/bin/spire-server healthcheck' },
+];
+
 export function createSpireControl({
   env = process.env, dataDir, run = promisify(execFile), fetchImpl = fetch, now = () => new Date(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 } = {}) {
@@ -236,21 +248,50 @@ export function createSpireControl({
     return checks;
   }
 
+  // Which SPIRE the card works on: the user's runtime choice (like the Mock/Real toggle), defaulting from the configuration: a SPIRE_SERVER_URL
+  // makes "cluster" the start choice, none makes it "docker". The choice lives in memory and is gone on restart.
+  let selected = null;
+  const targetNow = () => selected ?? (parseSpireSettings(env).mode === 'local' ? 'docker' : 'cluster');
+
+  function targetView() {
+    const s = parseSpireSettings(env);
+    const configured = s.mode === 'remote';
+    return {
+      target: targetNow(), serverUrl: s.serverUrl,
+      options: {
+        docker: { available: true },
+        cluster: { available: configured, reason: configured ? null : (s.mode === 'invalid' ? s.problems.join('; ') : "SPIRE_SERVER_URL is not set in this lab's .env") },
+      },
+    };
+  }
+
+  function setTarget(t) {
+    if (t !== 'docker' && t !== 'cluster') throw new TargetError('bad_target', "target must be 'docker' or 'cluster'", 400);
+    const s = parseSpireSettings(env);
+    if (t === 'cluster' && s.mode !== 'remote') {
+      throw new TargetError('cluster_not_configured', `The cluster SPIRE is not configured: ${s.mode === 'invalid' ? s.problems.join('; ') : "set SPIRE_SERVER_URL in this lab's .env and restart the lab"}. The Docker demo keeps working.`);
+    }
+    selected = t;
+    return targetView();
+  }
+
   async function test() {
     const settings = parseSpireSettings(env);
     let checks;
-    let tested = settings.mode;
-    if (settings.mode === 'invalid') {
-      checks = [{ name: 'settings', ok: false, detail: settings.problems.join('; '), ms: 0 }];
-    } else if (settings.mode === 'remote') {
-      checks = await testRemote(settings);
-    } else {
+    let tested;
+    if (targetNow() === 'docker') {
       tested = 'local';
       checks = await testLocal();
+    } else if (settings.mode === 'remote') {
+      tested = 'remote';
+      checks = await testRemote(settings);
+    } else {
+      tested = 'invalid';
+      checks = [{ name: 'settings', ok: false, detail: settings.problems.length ? settings.problems.join('; ') : "SPIRE_SERVER_URL is not set in this lab's .env", ms: 0 }];
     }
     // The agent probe is optional: a missing SPIRE_AGENT_URL does not fail a remote test.
     const required = checks.filter((c) => !(c.name === 'agent' && c.detail.startsWith('not configured')));
-    return { ok: required.every((c) => c.ok), tested, testedAt: now().toISOString(), checks };
+    return { ok: required.every((c) => c.ok), tested, target: targetNow(), testedAt: now().toISOString(), checks };
   }
 
   async function dockerAvailable() {
@@ -268,9 +309,9 @@ export function createSpireControl({
     return result;
   }
 
-  // A local container only makes sense in local mode: with SPIRE_SERVER_URL set the card tests YOUR SPIRE, and starting a demo one would test the wrong thing.
-  const notLocal = (verb) => (parseSpireSettings(env).mode === 'local' ? null
-    : { ok: false, reason: 'not-local', message: `SPIRE_SERVER_URL is set, so this card tests your own SPIRE and will not ${verb} a local demo one. Unset it to use the local demo.` });
+  // A local container only makes sense for the Docker target: with the cluster selected the card tests THAT SPIRE, and starting a demo one would test the wrong thing.
+  const notLocal = (verb) => (targetNow() === 'docker' ? null
+    : { ok: false, reason: 'not-local', message: `The cluster SPIRE is selected. This lab holds no cluster credentials, so it will not ${verb} a SPIRE on Kubernetes: use the kubectl commands shown, or switch to Docker.` });
 
   async function start() {
     const nl = notLocal('start'); if (nl) return nl;
@@ -290,5 +331,5 @@ export function createSpireControl({
     return { ok: testResult.ok, restarted: true, test: testResult };
   }
 
-  return { test, start, restart, confDir };
+  return { test, start, restart, confDir, targetView, setTarget };
 }
