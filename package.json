@@ -1,0 +1,21 @@
+{
+  "name": "spiffe-issuer-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SPIFFE Issuer LAB: mints three test JWT-SVIDs (valid, mismatched, untrusted) and publishes the JWKS a PingOne Privilege gateway can fetch, then presents each to an MCP door. A token minter, not SPIRE.",
+  "license": "MIT",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "start": "npm start -w server",
+    "build": "npm run build -w web",
+    "test": "npm test -w server && npm test -w web && node --test scripts/*.test.mjs",
+    "doctor": "node scripts/doctor.mjs"
+  }
+}

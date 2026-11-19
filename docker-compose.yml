@@ -1,0 +1,35 @@
+# OrbStack:  docker compose up --build -d   ->  http://127.0.0.1:7828
+# The server binds 0.0.0.0 INSIDE the container (SPIFFE_BIND), but the port is published on loopback only. Do not change the 127.0.0.1 below.
+# Settings: the lab's own .env beside this file (see .env.example). Every setting is optional; with none the lab starts in Mock.
+name: spiffe-issuer
+
+services:
+  spiffe-issuer:
+    restart: unless-stopped
+    build: .
+    ports:
+      - "127.0.0.1:${HOST_PORT:-7828}:7828"
+    environment:
+      PORT: "7828"
+      SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
+      # The name the family lab-proxy (https://local.ping-devops.com:8443) sends in Host; loopback is always accepted.
+      LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-spiffe-issuer.local.ping-devops.com}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # The signing keys (keys.json, mode 600). Generated at first start; never in the image or the repo.
+      - spiffe-issuer-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7828/api/health').then(r=>r.json()).then(j=>process.exit(j.schema==='demo-health/1'&&j.state==='ready'?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      start_period: 5s
+      start_interval: 2s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  spiffe-issuer-data:

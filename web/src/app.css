@@ -1,0 +1,54 @@
+/* Layout only: every colour and font comes from the shared tokens in standalone-ui.css. */
+html { font-size: var(--fs, 16px); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg-lab); color: var(--text); font-family: var(--font-primary); }
+code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.app { padding: 0 0 32px; }
+
+/* Shell bar (STANDALONE-UI-PATTERNS.md section 1): Core Dark in both themes, Ping Red gradient rule, full bleed (the -16px cancels the body gutter). */
+.shell-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 0 -16px; padding: 10px 20px;
+  background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; }
+.shell-brand { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.02em; }
+.shell-logo { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 4px; background: var(--accent-gradient); color: var(--on-accent); font: 800 0.75rem var(--font-mono); }
+.shell-badge { padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; background: var(--accent-gradient); color: var(--on-accent); font: 700 0.75rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.shell-badge--real { background: var(--surface-2); color: var(--status-warn); border-color: var(--status-warn); }
+.shell-bar .shell-right { margin-left: auto; }
+@media (max-width: 600px) { .shell-bar { gap: 10px; padding: 10px 16px; } }
+
+.page { max-width: 2200px; margin: 0 auto; padding: 4px 0 32px; }
+.page__title { margin: 16px 0 4px; font-size: 1.4rem; }
+.intro { margin: 0 0 12px; max-width: 75ch; color: var(--muted); font-size: 0.875rem; line-height: 1.45; }
+.app-error { padding: 16px; color: var(--danger-text); }
+.muted { color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.field-error { color: var(--danger-text); background: var(--accent-soft); border: 1px solid var(--danger-text); border-radius: 6px; padding: 8px 12px; font-size: 0.875rem; }
+.notice { border: 1px solid var(--status-warn); border-left-width: 4px; border-radius: 6px; background: var(--surface-2); padding: 8px 12px; font-size: 0.875rem; }
+
+/* Cards (section 4): accent top edge by default; the semantic variants say what the token should do, with a chip as well. */
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; margin: 12px 0; }
+.grid--tokens { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.card { min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.card--ok { border-top-color: var(--status-ok); }
+.card--bad { border-top-color: var(--danger-text); }
+.card--neutral { border-top-color: var(--border); }
+.card__title { margin: 0 0 6px; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card__note { margin: 4px 0 8px; color: var(--muted); font-size: 0.8125rem; line-height: 1.45; }
+
+/* Key-value data (section 5) */
+.kv { display: grid; grid-template-columns: minmax(9rem, max-content) 1fr; gap: 6px 14px; margin: 8px 0 0; font-size: 0.875rem; }
+.kv dt { color: var(--muted); font-weight: 600; }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 600px) { .kv { grid-template-columns: 1fr; gap: 0; } .kv dd { margin-bottom: 8px; } }
+
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 20px 0 4px; }
+.section-head__title { margin: 0; font-size: 1.1rem; }
+
+/* Status chips (section 7): always a word, never colour alone. */
+.chip--ok { color: var(--status-ok); border-color: var(--status-ok); }
+.chip--warn { color: var(--status-warn); border-color: var(--status-warn); }
+
+.scroll { overflow-x: auto; }
+.results { width: 100%; min-width: 38rem; border-collapse: collapse; font-size: 0.875rem; margin-top: 8px; }
+.results th, .results td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.results th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.results__sub { color: var(--muted); }

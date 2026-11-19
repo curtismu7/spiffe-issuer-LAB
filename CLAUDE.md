@@ -1,0 +1,15 @@
+# spiffe-issuer
+
+Tool-tier standalone app: mints three test JWT-SVIDs (valid, mismatched, untrusted), publishes the JWKS + OIDC discovery a Privilege gateway can fetch, and presents each token to an MCP door (`initialize` + `tools/list`). It is a token minter, NOT SPIRE; say so wherever it shows tokens.
+
+- Run: `./scripts/run.sh` (http://127.0.0.1:7828). Test: `npm test` (server = `node --test test/*.test.js`, web = vitest, `scripts/*.test.mjs`). Preflight: `npm run doctor`. Outside check of a running lab: `node scripts/verify-live.mjs`.
+- Core: `server/src/keys.js` (two keys, persisted in DATA_DIR mode 600; RS256 default, ES256 via createECDH), `svid.js` (mint three tokens, `verify`), `config.js` (settings: lab `.env`/env over the shared file, only `SPIFFE_*` and `PUBLIC_URL`), `present.js` (Real via the vendored hop `gatewayReal.js`; Mock rehearsal), `app.js` (public `/.well-known/*`, local `/api/*`), `safety.js`, `netguard.js`.
+- Rules that bite:
+  - The private keys never leave `keys.js`: no route, trace, log or test output carries them (a test scans every response). The untrusted key is never published.
+  - `/.well-known/jwks.json` and `/openid-configuration` answer for ANY Host (the gateway fetches them through a tunnel); everything else keeps the loopback/`LAB_ALLOWED_HOSTS` check, and `/api` refuses requests carrying tunnel/proxy headers. The API can mint tokens a gateway trusts: it must never be reachable from the internet.
+  - Real mode may reach exactly the configured gateway origin, only while presenting (netguard). Mock makes zero outbound calls. Real is the start mode when configured (rule 26); never remove the Mock/Real toggle (rule 26).
+  - Mock rows are labelled MOCK and use `.invalid` hosts; a real trace never says `checked` (`assertTrace`); no full token in any trace.
+  - Lifetime is capped at 300 s (`MAX_LIFETIME_SEC`). One port, 7828, loopback publish. Only `.example` / `.invalid` hosts in files and tests; tests set `STANDALONE_ENV` to a missing file so the real shared file is never read.
+  - Vendored byte for byte and pinned, never edited: `server/src/gatewayReal.js` (shared/gateway-real), `server/src/gatewayTrace.js` + `web/src/gateway-trace/*`, `web/src/components/JsonPane.*`, `web/src/top-menu/*`, `web/src/standalone-ui.css`. Re-vendor with `cp`, then re-pin (`scripts/repo.test.mjs` checks every pin). Never use `crypto.generateKeyPair('ec')`.
+- Honesty: whether a Privilege gateway accepts a SPIFFE JWT-SVID presented directly is UNVERIFIED until the owner's real run; do not upgrade the claim without that run.
+- Attribution: scaffold patterns copied from privilege-google-secrets-LAB and federated-identity-LAB (vocabulary only; their SPIFFE presets are simulations). No cross-repo imports.
