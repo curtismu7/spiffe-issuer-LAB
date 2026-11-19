@@ -52,3 +52,4 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywh
 .results th, .results td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
 .results th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 .results__sub { color: var(--muted); }
+.results .chip { white-space: nowrap; }
