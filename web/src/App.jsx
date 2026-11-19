@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import TopMenu from "./top-menu/TopMenu.jsx";
 import ShelfLink from "./components/ShelfLink.jsx";
 import Settings from "./components/Settings.jsx";
+import SpireCard from "./components/SpireCard.jsx";
 import TokenCards from "./components/TokenCards.jsx";
 import Results from "./components/Results.jsx";
 
@@ -94,6 +95,7 @@ export default function App() {
         {error && <p className="field-error" role="alert" data-testid="error">{error}</p>}
         {info.realHint && <p className="notice" data-testid="real-hint">{info.realHint}</p>}
         <Settings config={c} app={app} audience={tokens?.audience} onApp={chooseApp} />
+        <SpireCard busy={busy} setBusy={setBusy} onError={setError} />
         <TokenCards tokens={tokens?.tokens} config={c} onMint={() => mint(app)} />
         <Results run={run} real={real} busy={busy} onPresent={present} />
       </main>

@@ -14,7 +14,8 @@ Simulated or not claimed:
 
 - **Not SPIRE.** The lab signs whatever SPIFFE ID it is configured with. No workload is attested, no trust bundle is rotated.
 - **Mock mode** (the default with no settings) rehearses against an in-process stand-in that applies the same checks to the published JWKS. Every Mock row says MOCK; it is never a Privilege result, and its error words are the lab's own.
-- **UNVERIFIED:** whether a Privilege gateway accepts a SPIFFE JWT-SVID presented directly as the bearer has not been run on our tenant (the SPIFFE-to-PingFederate leg is verified; SPIFFE straight to the gateway is not). The claim shape the lab sends (`aud` as one string, RS256) is the common one; `SPIFFE_AUD_ARRAY` and `SPIFFE_ALG` exist so the owner can flip them if the real gateway answers otherwise.
+- **Verified once, by a real SPIRE and not by this lab:** on 2026-11-19 a JWT-SVID issued by a real SPIRE server (1.7.2 on Kubernetes) was presented as the bearer to a real Privilege gateway door. The registered SPIFFE ID got 200 with a tool list; another ID, a wrong audience, a tampered signature and no token each got 401. The Federated Identity was set to fetch SPIRE's keys by URL. So a gateway does accept a SPIFFE JWT-SVID presented directly.
+- **Still UNVERIFIED:** this lab's OWN tokens (RS256, `aud` as one string) have not been presented to a real gateway in a recorded run. `SPIFFE_AUD_ARRAY` and `SPIFFE_ALG=ES256` exist so the owner can match what SPIRE sends (an ES256 key, `aud` as an array) if the gateway answers otherwise.
 - The three expected answers (200, 401, 401) are the lab's design. A row the gateway answers differently is shown as "not as designed", never hidden.
 
 The three tokens:
@@ -111,7 +112,25 @@ Then create an agent key whose custodian is the Federated Identity (leave the ke
 
 Put `PUBLIC_URL`, `SPIFFE_GW_URL` and `SPIFFE_GW_APPS` in `.env`, run `docker compose up -d`, check that `GET /api/info` reports `"source": "real"`, and click Present. Expected: Valid 200, Mismatched 401, Untrusted 401. If you change `PUBLIC_URL`, change Issuer and JwksURI in Privilege to match.
 
-Console menu path and the SPIFFE-direct-to-gateway acceptance are UNVERIFIED (see the setup guide); correct the guide from the first real run.
+The console menu path is Directory, Federated Identities, Register Identity (checked 2026-11-19). SPIFFE-direct-to-gateway acceptance was verified with a real SPIRE (see the top of this file); the lab's own tokens have not yet had their recorded real run.
+
+## Run, test or set up a real SPIRE (the SPIRE card on the Settings page)
+
+The lab is a token minter, not SPIRE. The **SPIRE server control** card helps you see and test the real thing, and its **Set up SPIRE on your side** section is the step-by-step guide (five steps, filled in with your trust domain, namespace and agent names, and placeholders everywhere else).
+
+- **Local demo SPIRE (default).** Start / Restart SPIRE runs a throwaway server on this machine in Docker (`spire-demo-server`, image `ghcr.io/spiffe/spire-server:1.7.2`, health on `127.0.0.1:18081`, loopback only). Test passes only when the container runs AND the server's own `/ready` answers 200. It needs Docker reachable from the lab, so from the Docker image it answers "Docker is not reachable" and starts nothing; run the lab from a clone to use it.
+- **Your own SPIRE.** Put `SPIRE_SERVER_URL=https://<host>[/<prefix>]` in `.env` (optionally `SPIRE_AGENT_URL`, and `SPIRE_ALLOWED_HOSTS` for another origin that serves the keys). The card then tests THAT: discovery at `<base>/.well-known/openid-configuration` and the keys at the discovery `jwks_uri`, falling back to SPIRE's default `<base>/keys` (behind a path-rewriting ingress the discovery `jwks_uri` often points at the wrong place, and the card says so and tells you which URL to use). A pass means the keys are public, have a `kid`, and hold no private material; it cannot prove the server is SPIRE, so read the issuer and key algorithm it shows. A set but invalid URL is reported, never silently replaced by the local mode. Start and Restart refuse while the URL is set.
+- **Network.** Testing your own SPIRE reaches only the origins you configured, only while you press Test, with no redirect followed (netguard). Mock mode otherwise makes no outbound call.
+
+### Verify a token from the outside (no cluster access)
+
+Anyone can check that the published keys really verify a real token. The token comes from the environment or stdin, never an argument, and is never printed:
+
+```
+TOKEN=<jwt-svid> node scripts/verify-svid.mjs https://<host>[/<prefix>]/keys --iss <iss> --sub <spiffe-id> --aud <audience>
+```
+
+Exit 0: the signature verifies against the published key and every expectation holds. Exit 1: it does not (unknown key, bad signature, expired, a wrong iss/sub/aud). Exit 2: bad usage. This is the key-publishing half of the chain; the gateway's own decision is the 200/401 call in the last step of the in-page guide.
 
 ## Health, doctor and reset
 

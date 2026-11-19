@@ -12,13 +12,15 @@ import { mountShelfRoute } from './shelfLink.js';
 import { publicConfig, readConfig } from './config.js';
 import { mintAll } from './svid.js';
 import { presentMock, presentReal } from './present.js';
+import { createSpireControl, parseSpireSettings, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
+import { buildGuide } from './spireGuide.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { return null; } })();
 const UNREACHABLE = new Set(['mcp_unreachable', 'mcp_timeout']);
 
-export function createApp({ store, env = process.env, now = Date.now, health = createHealth() } = {}) {
+export function createApp({ store, env = process.env, now = Date.now, health = createHealth(), spire } = {}) {
   if (!store) throw new Error('createApp needs a key store');
   const app = express();
   app.disable('x-powered-by');
@@ -43,6 +45,38 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
   api.use(express.json({ limit: '4kb' }));
   api.use('/health', health.router);
   mountShelfRoute(api, { env });
+
+  // SPIRE server control (education): test / start / restart an optional local SPIRE container, or
+  // probe a configured remote discovery base. The command shown to the user is static text.
+  const spireCtl = spire || createSpireControl({ env, dataDir: process.env.DATA_DIR || path.resolve(HERE, '../../.data'), now: () => new Date(now()) });
+  api.get('/spire/command', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ command: COMMAND_SHOWN, container: CONTAINER_NAME, image: SPIRE_IMAGE, port: LOCAL_PORT });
+  });
+  // "Set it up on your side": the steps, with this lab's trust domain / namespace / agent names filled in and the user's own SPIRE_SERVER_URL if set.
+  // Static text built from settings; it carries no key, token or secret, and it names no one's host.
+  api.get('/spire/guide', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const cfg = readConfig(env);
+    const settings = parseSpireSettings(env);
+    res.json({ ...buildGuide({ trustDomain: cfg.trustDomain, namespace: cfg.namespace, agent: cfg.agent, otherAgent: cfg.otherAgent, serverUrl: settings.serverUrl }), mode: settings.mode, serverUrl: settings.serverUrl, problems: settings.problems });
+  });
+  api.post('/spire/test', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { return res.json(await spireCtl.test()); }
+    catch (e) { return res.status(500).json({ ok: false, error: 'spire_test_failed', message: 'The SPIRE check failed inside the lab.' }); }
+  });
+  api.post('/spire/start', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { return res.json(await spireCtl.start()); }
+    catch (e) { return res.status(500).json({ ok: false, error: 'spire_start_failed', message: 'Starting the local SPIRE failed.' }); }
+  });
+  api.post('/spire/restart', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { return res.json(await spireCtl.restart()); }
+    catch (e) { return res.status(500).json({ ok: false, error: 'spire_restart_failed', message: 'Restarting the local SPIRE failed.' }); }
+  });
+
 
   const view = (req) => { const cfg = readConfig(env); return { cfg, app: cfg.appFor(req.body?.app) }; };
   const tokenView = (t) => ({ id: t.id, label: t.label, why: t.why, expect: t.expect, token: t.token, header: t.header, claims: t.claims });
