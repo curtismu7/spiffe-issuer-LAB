@@ -10,7 +10,7 @@ export default function Settings({ config: c, app, audience, onApp }) {
   return (
     <section className="grid">
       <div className="card" data-testid="federation">
-        <h2 className="card__title">Federated Identity values for Privilege</h2>
+        <h2 className="card__title"><span className="step-num" aria-hidden="true">1</span>Federated Identity values for Privilege</h2>
         <p className="card__note">Create a Federated Identity with these four values, grant it scope <code>mcp</code> on the door, and the gateway can verify the tokens below.</p>
         <dl className="kv">
           <Row k="Issuer" testId="v-issuer"><Mono>{c.issuer}</Mono>{!c.publicUrlSet && <span className="chip chip--warn">placeholder: set PUBLIC_URL</span>}</Row>

@@ -22,7 +22,7 @@ export default function TokenCards({ tokens, config, onMint }) {
   return (
     <section data-testid="tokens">
       <div className="section-head">
-        <h2 className="section-head__title">The three tokens</h2>
+        <h2 className="section-head__title"><span className="step-num" aria-hidden="true">3</span>The three tokens</h2>
         <button type="button" data-testid="mint" onClick={onMint}>Mint fresh tokens</button>
       </div>
       <p className="card__note">TEST tokens this lab signed: not issued by SPIRE, valid for {config.ttlSeconds} seconds. The private keys are never shown.</p>

@@ -25,8 +25,11 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywh
 .notice { border: 1px solid var(--status-warn); border-left-width: 4px; border-radius: 6px; background: var(--surface-2); padding: 8px 12px; font-size: 0.875rem; }
 
 /* Cards (section 4): accent top edge by default; the semantic variants say what the token should do, with a chip as well. */
-.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-items: start; margin: 12px 0; }
-.grid--tokens { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; align-items: start; margin: 12px 0; }
+.grid--tokens { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 900px) { .grid, .grid--tokens { grid-template-columns: 1fr; } }
+.step-num { display: inline-grid; place-items: center; min-width: 1.4rem; height: 1.4rem; border-radius: 999px;
+  background: var(--accent-gradient); color: var(--on-accent); font: 700 0.75rem var(--font-mono); margin-right: 0.5em; vertical-align: 2px; }
 .card { min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
 .card--ok { border-top-color: var(--status-ok); }
 .card--bad { border-top-color: var(--danger-text); }
