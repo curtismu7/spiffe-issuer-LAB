@@ -72,3 +72,9 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywh
 .spire-code { margin: 6px 0 0; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-mono); font-size: 0.8125rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .spire-table .results { min-width: 0; table-layout: auto; }
 .spire-table .results th, .spire-table .results td { padding: 6px 8px; }
+
+/* SVID claims: a small definition list instead of a JSON dump. */
+.spire-claims { margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.spire-claims > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.spire-claims dt { font-size: 0.8125rem; font-weight: 600; color: var(--text-muted, #555); min-width: 11em; }
+.spire-claims dd { margin: 0; font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }

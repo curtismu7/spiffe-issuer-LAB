@@ -427,7 +427,14 @@ describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
     fireEvent.click(screen.getByTestId("spire-svid-get"));
     const result = await screen.findByTestId("spire-svid-result");
     expect(within(result).getAllByText("pass").length).toBe(3);
+    // the six checks are shown in plain words, not raw ids
+    expect(within(result).getByText("Well-formed JWT (ES256)")).toBeInTheDocument();
+    expect(within(result).getByText("Signature verifies")).toBeInTheDocument();
+    expect(within(result).getByText("Subject is this lab's SPIFFE ID")).toBeInTheDocument();
+    // claims are a readable list, not a JSON dump
+    expect(screen.getByTestId("spire-svid-claims")).toHaveTextContent("Who (subject)");
     expect(screen.getByTestId("spire-svid-claims")).toHaveTextContent("spiffe://demo/external");
+    expect(screen.getByTestId("spire-svid-claims")).toHaveTextContent("Minted for (audience)");
     // the raw token is present but folded away inside a closed details
     const details = within(result).getByText("Raw token (short-lived; a gateway would present it as the bearer)").closest("details");
     expect(details.open).toBe(false);
