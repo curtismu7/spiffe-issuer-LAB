@@ -16,10 +16,17 @@ let failed = 0;
 const report = (level, name, detail) => { if (level === 'fail') failed++; console.log(`${level.toUpperCase().padEnd(4)}  ${name}: ${detail}`); };
 for (const c of await runChecks({ store })) report(c.level, c.id, c.detail);
 
-const port = Number(process.env.PORT) || 7828;
-await new Promise((resolve) => {
-  const s = net.createServer();
-  s.once('error', (e) => { report('fail', 'port-free', `${port} is not free (${e.code}). Free port 7828 (this app's one allocated port)`); resolve(); });
-  s.listen(port, '127.0.0.1', () => s.close(() => { report('pass', 'port-free', `${port} is free`); resolve(); }));
-});
+// The running lab occupies its own host port; the doctor's port-free check applies to the lab being OFF.
+// A running instance of this lab itself is not a clash, so probe only when no spiffe-issuer answers on it.
+const port = Number(process.env.PORT) || 7829;
+const selfRunning = await fetch(`http://127.0.0.1:${port}/api/health`).then((r) => r.ok).catch(() => false);
+if (!selfRunning) {
+  await new Promise((resolve) => {
+    const s = net.createServer();
+    s.once('error', (e) => { report('fail', 'port-free', `${port} is not free (${e.code}). Free port 7829 (this app's one allocated port)`); resolve(); });
+    s.listen(port, '127.0.0.1', () => s.close(() => { report('pass', 'port-free', `${port} is free`); resolve(); }));
+  });
+} else {
+  report('pass', 'port-free', `${port} is serving this lab (a running instance is not a clash)`);
+}
 process.exit(failed ? 1 : 0);
