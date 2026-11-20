@@ -12,7 +12,8 @@ import { mountShelfRoute } from './shelfLink.js';
 import { publicConfig, readConfig } from './config.js';
 import { mintAll } from './svid.js';
 import { presentMock, presentReal } from './present.js';
-import { createSpireControl, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
+import { createSpireControl, parseSpireSettings, TargetError, K8S_COMMANDS, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
+import { buildGuide } from './spireGuide.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -50,7 +51,27 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
   const spireCtl = spire || createSpireControl({ env, dataDir: process.env.DATA_DIR || path.resolve(HERE, '../../.data'), now: () => new Date(now()) });
   api.get('/spire/command', (_req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ command: COMMAND_SHOWN, container: CONTAINER_NAME, image: SPIRE_IMAGE, port: LOCAL_PORT });
+    res.json({ command: COMMAND_SHOWN, container: CONTAINER_NAME, image: SPIRE_IMAGE, port: LOCAL_PORT, kubectl: K8S_COMMANDS });
+  });
+  // Which SPIRE the card works on: the Docker demo or the cluster one (SPIRE_SERVER_URL). Runtime choice, in memory, like the Mock/Real toggle.
+  api.get('/spire/target', (_req, res) => { res.set('Cache-Control', 'no-store'); res.json(spireCtl.targetView()); });
+  api.post('/spire/target', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try { return res.json(spireCtl.setTarget(req.body?.target)); }
+    catch (e) {
+      if (e instanceof TargetError) return res.status(e.status).json({ ok: false, error: e.code, message: e.message });
+      return res.status(500).json({ ok: false, error: 'spire_target_failed', message: 'Switching the SPIRE target failed inside the lab.' });
+    }
+  });
+  // "Set it up on your side": the steps, with this lab's trust domain / namespace / agent names filled in and the user's own SPIRE_SERVER_URL if set.
+  // Static text built from settings; it carries no key, token or secret, and it names no one's host.
+  api.get('/spire/guide', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const cfg = readConfig(env);
+    const settings = parseSpireSettings(env);
+    const { target } = spireCtl.targetView();
+    // The guide's examples use the user's own URL only when the cluster is the target; the Docker demo has no public URL.
+    res.json({ ...buildGuide({ trustDomain: cfg.trustDomain, namespace: cfg.namespace, agent: cfg.agent, otherAgent: cfg.otherAgent, serverUrl: target === 'cluster' ? settings.serverUrl : null }), mode: settings.mode, target, serverUrl: settings.serverUrl, problems: settings.problems });
   });
   api.post('/spire/test', async (_req, res) => {
     res.set('Cache-Control', 'no-store');

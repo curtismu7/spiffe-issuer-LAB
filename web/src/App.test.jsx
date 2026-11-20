@@ -143,11 +143,11 @@ describe("tokens", () => {
 describe("the SPIRE server control card", () => {
   const SPIRE_OK = { ok: true, tested: "local", testedAt: "2026-11-19T00:00:00.000Z", checks: [
     { name: "container", ok: true, detail: "spire-demo-server is running", ms: 3 },
-    { name: "api-port", ok: true, detail: "127.0.0.1:18081 accepts connections", ms: 1 },
+    { name: "ready", ok: true, detail: "127.0.0.1:18081 accepts connections", ms: 1 },
   ] };
   const SPIRE_FAIL = { ok: false, tested: "local", testedAt: "2026-11-19T00:00:00.000Z", checks: [
     { name: "container", ok: false, detail: "spire-demo-server is not running (Docker may be unavailable)", ms: 2 },
-    { name: "api-port", ok: false, detail: "127.0.0.1:18081 is not accepting connections", ms: 1 },
+    { name: "ready", ok: false, detail: "127.0.0.1:18081 is not accepting connections", ms: 1 },
   ] };
 
   it("renders the card, loads the education command, and the test button calls POST /api/spire/test with pass chips", async () => {
@@ -171,7 +171,7 @@ describe("the SPIRE server control card", () => {
     const checks = await screen.findByTestId("spire-checks");
     expect(calls.filter((c) => c.url === "/api/spire/test").at(-1)).toBeTruthy();
     expect(within(screen.getByTestId("spire-check-container")).getByText("pass")).toBeInTheDocument();
-    expect(within(screen.getByTestId("spire-check-api-port")).getByText("127.0.0.1:18081 accepts connections")).toBeInTheDocument();
+    expect(within(screen.getByTestId("spire-check-ready")).getByText("127.0.0.1:18081 accepts connections")).toBeInTheDocument();
     expect(within(checks).getAllByText("pass")).toHaveLength(2);
     // with a pass, Start stays disabled
     expect(screen.getByTestId("spire-start")).toBeDisabled();
@@ -220,5 +220,194 @@ describe("the SPIRE server control card", () => {
     expect(screen.getByTestId("spire-restart")).toBeDisabled();
     await screen.findByTestId("spire-checks");
     expect(screen.getByTestId("spire-test")).not.toBeDisabled();
+  });
+});
+
+describe("the SPIRE card: set it up on your side, and testing your own SPIRE", () => {
+  const GUIDE = {
+    verified: "Verified end to end on one real deployment (SPIRE 1.7.2 on Kubernetes, 2026-11-19): the registered SPIFFE ID gave 200.",
+    mode: "local", serverUrl: null, problems: [],
+    steps: [
+      { id: "run", title: "Run SPIRE with its OIDC discovery provider", body: ["Pin the SPIRE version you tested."], code: ['jwt_issuer = "https://<the-issuer-you-want-in-iss>"'] },
+      { id: "publish", title: "Publish the keys at a public https URL the gateway can reach", body: ["The gateway fetches the keys itself."], code: ["SPIRE_SERVER_URL=https://<your-spire-host>[/<prefix>]"] },
+      { id: "register", title: "Register the workload", body: ["Always ask for a token by explicit SPIFFE ID."], code: ["spire-server entry create -spiffeID spiffe://corp.example/ns/agents/sa/mcp-agent"] },
+      { id: "identity", title: "Register the Federated Identity in Privilege", body: ["Never paste or pin the keys."], code: [] },
+      { id: "prove", title: "Prove it with five calls", body: ["Each must be 401."], code: [] },
+    ],
+  };
+  const REMOTE_OK = { ok: true, tested: "remote", testedAt: "2026-11-19T00:00:00.000Z", checks: [
+    { name: "discovery", ok: true, detail: "HTTP 200, issuer https://host.example", ms: 5 },
+    { name: "jwks", ok: true, detail: "1 key (ES256) at https://host.example/spire/keys (default path <base>/keys).", ms: 4 },
+    { name: "agent", ok: false, detail: "not configured (SPIRE_AGENT_URL is unset); optional", ms: 0 },
+  ] };
+
+  const mount = ({ guide = GUIDE, test = REMOTE_OK, start } = {}) => {
+    stub(NO_SETTINGS);
+    globalThis.fetch = vi.fn(async (url) => {
+      const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
+      if (url === "/api/info") return json(NO_SETTINGS);
+      if (url === "/api/shelf") return json({ shelfUrl: null });
+      if (url === "/api/mint") return json({ source: "mock", audience: NO_SETTINGS.config.audience, tokens: TOKENS });
+      if (url === "/api/spire/command") return json({ command: "docker run …" });
+      if (url === "/api/spire/guide") return guide ? json(guide) : json({}, 404);
+      if (url === "/api/spire/test") return json(test);
+      if (url === "/api/spire/start" || url === "/api/spire/restart") return json(start);
+      return json({}, 404);
+    });
+    return render(<App />);
+  };
+
+  it("shows the five setup steps in order, with their code, and says what was verified", async () => {
+    mount();
+    const guide = await screen.findByTestId("spire-guide");
+    expect(screen.getByTestId("spire-verified")).toHaveTextContent("Verified end to end on one real deployment");
+    const steps = within(guide).getAllByTestId(/^spire-step-/).map((el) => el.getAttribute("data-testid"));
+    expect(steps).toEqual(["spire-step-run", "spire-step-publish", "spire-step-register", "spire-step-identity", "spire-step-prove"]);
+    expect(within(screen.getByTestId("spire-step-register")).getByText(/spiffe:\/\/corp.example\/ns\/agents\/sa\/mcp-agent/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("spire-step-publish")).getByText(/SPIRE_SERVER_URL=https:\/\/<your-spire-host>/)).toBeInTheDocument();
+    expect(guide.tagName).toBe("DETAILS");
+    expect(guide.open).toBe(false); // folded away until asked for
+  });
+
+  it("the card still works when the guide cannot be loaded", async () => {
+    mount({ guide: null });
+    await screen.findByTestId("spire-card");
+    expect(screen.queryByTestId("spire-guide")).toBeNull();
+    expect(screen.getByTestId("spire-test")).not.toBeDisabled();
+  });
+
+  it("testing your own SPIRE: names the mode and the URL, never offers to start a local one, and says what a pass does and does not prove", async () => {
+    mount({ guide: { ...GUIDE, mode: "remote", serverUrl: "https://host.example/spire" } });
+    await screen.findByTestId("spire-card");
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("Cluster SPIRE");
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("https://host.example/spire");
+    expect(screen.queryByTestId("spire-command")).toBeNull();
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+    expect(screen.getByTestId("spire-restart")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    expect(within(screen.getByTestId("spire-check-jwks")).getByText(/1 key \(ES256\) at https:\/\/host.example\/spire\/keys/)).toBeInTheDocument();
+    expect(screen.getByTestId("spire-remote-caveat")).toHaveTextContent("cannot prove the server is SPIRE");
+    // a pass with the optional agent row "not configured" is still a pass overall
+    expect(screen.getByTestId("spire-card")).toHaveTextContent("pass");
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+  });
+
+  it("an invalid SPIRE_SERVER_URL is shown as a problem, not hidden behind the local mode", async () => {
+    mount({ guide: { ...GUIDE, mode: "invalid", problems: ["SPIRE_SERVER_URL must be an https URL with no credentials, query or fragment"] },
+      test: { ok: false, tested: "invalid", testedAt: "2026-11-19T00:00:00.000Z", checks: [{ name: "settings", ok: false, detail: "SPIRE_SERVER_URL must be an https URL", ms: 0 }] } });
+    await screen.findByTestId("spire-card");
+    expect(screen.getByTestId("spire-settings-problems")).toHaveTextContent("SPIRE_SERVER_URL must be an https URL");
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("SPIRE_SERVER_URL is invalid");
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    expect(within(screen.getByTestId("spire-check-settings")).getByText("fail")).toBeInTheDocument();
+    expect(screen.queryByTestId("spire-remote-caveat")).toBeNull();
+  });
+
+  it("a server that refuses to start a local SPIRE (the URL is set) gets a named notice, and a successful start shows the ready result", async () => {
+    mount({ guide: { ...GUIDE, mode: "local" }, test: { ok: false, tested: "local", testedAt: "x", checks: [{ name: "container", ok: false, detail: "not running", ms: 1 }, { name: "ready", ok: false, detail: "refused", ms: 1 }] },
+      start: { ok: false, reason: "not-local", message: "SPIRE_SERVER_URL is set, so this card tests your own SPIRE and will not start a local demo one." } });
+    await screen.findByTestId("spire-card");
+    fireEvent.click(screen.getByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    fireEvent.click(screen.getByTestId("spire-start"));
+    expect(await screen.findByTestId("spire-not-local")).toHaveTextContent("SPIRE_SERVER_URL is set");
+    expect(screen.queryByTestId("spire-start-error")).toBeNull();
+  });
+
+  it("a successful local start replaces the failed result with the passing one", async () => {
+    const up = { ok: true, tested: "local", testedAt: "x", checks: [{ name: "container", ok: true, detail: "running", ms: 1 }, { name: "ready", ok: true, detail: "127.0.0.1:18081/ready answered 200", ms: 1 }] };
+    mount({ guide: GUIDE, test: { ...up, ok: false, checks: up.checks.map((c) => ({ ...c, ok: false })) }, start: { ok: true, started: true, test: up } });
+    await screen.findByTestId("spire-card");
+    fireEvent.click(screen.getByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    expect(within(screen.getByTestId("spire-checks")).getAllByText("fail")).toHaveLength(2);
+    fireEvent.click(screen.getByTestId("spire-start"));
+    expect(await screen.findByTestId("spire-start-ok")).toHaveTextContent("ready");
+    await waitFor(() => expect(within(screen.getByTestId("spire-checks")).getAllByText("pass")).toHaveLength(2));
+  });
+});
+
+describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
+  const STEPS = [{ id: "run", title: "Run SPIRE", body: ["x"], code: [] }];
+  const KUBECTL = [{ label: "Restart", command: "kubectl -n <namespace> rollout restart statefulset/spire-server" }];
+  const viewOf = (target, clusterAvailable = true) => ({ target, serverUrl: clusterAvailable ? "https://host.example/spire" : null,
+    options: { docker: { available: true }, cluster: { available: clusterAvailable, reason: clusterAvailable ? null : "SPIRE_SERVER_URL is not set in this lab's .env" } } });
+
+  const mount = ({ start = "cluster", clusterAvailable = true, switchTo } = {}) => {
+    stub(NO_SETTINGS);
+    const calls = [];
+    let current = viewOf(start, clusterAvailable);
+    globalThis.fetch = vi.fn(async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ url, body });
+      const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
+      if (url === "/api/info") return json(NO_SETTINGS);
+      if (url === "/api/shelf") return json({ shelfUrl: null });
+      if (url === "/api/mint") return json({ source: "mock", audience: NO_SETTINGS.config.audience, tokens: TOKENS });
+      if (url === "/api/spire/command") return json({ command: "docker run …", kubectl: KUBECTL });
+      if (url === "/api/spire/guide") return json({ verified: "v", steps: STEPS, mode: current.options.cluster.available ? "remote" : "local", target: current.target, serverUrl: current.serverUrl, problems: [] });
+      if (url === "/api/spire/target" && init.method === "POST") {
+        if (switchTo?.status) return json({ ok: false, error: "cluster_not_configured", message: switchTo.message }, switchTo.status);
+        current = { ...current, target: body.target };
+        return json(current);
+      }
+      if (url === "/api/spire/target") return json(current);
+      if (url === "/api/spire/test") return json({ ok: true, tested: current.target === "docker" ? "local" : "remote", target: current.target, testedAt: "x", checks: [{ name: "container", ok: true, detail: "up", ms: 1 }] });
+      return json({}, 404);
+    });
+    render(<App />);
+    return calls;
+  };
+
+  it("starts on the cluster when one is configured: kubectl commands shown, Docker command hidden, start and restart off", async () => {
+    mount();
+    await screen.findByTestId("spire-card");
+    await waitFor(() => expect(screen.getByTestId("spire-target-cluster")).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("Cluster SPIRE");
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("https://host.example/spire");
+    expect(screen.getByTestId("spire-kubectl")).toHaveTextContent("kubectl -n <namespace> rollout restart");
+    expect(screen.queryByTestId("spire-command")).toBeNull();
+    expect(screen.getByTestId("spire-start")).toBeDisabled();
+    expect(screen.getByTestId("spire-restart")).toBeDisabled();
+  });
+
+  it("switching to Docker posts the choice, clears the old result, reloads the guide, and shows the Docker command", async () => {
+    const calls = mount();
+    await screen.findByTestId("spire-card");
+    fireEvent.click(await screen.findByTestId("spire-test"));
+    await screen.findByTestId("spire-checks");
+    fireEvent.click(screen.getByTestId("spire-target-docker"));
+    await waitFor(() => expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "true"));
+    expect(calls.find((c) => c.url === "/api/spire/target" && c.body)?.body).toEqual({ target: "docker" });
+    expect(calls.filter((c) => c.url === "/api/spire/guide").length).toBe(2);
+    expect(screen.queryByTestId("spire-checks")).toBeNull();
+    expect(screen.getByTestId("spire-mode")).toHaveTextContent("Docker demo SPIRE");
+    expect(screen.getByTestId("spire-command")).toBeInTheDocument();
+    expect(screen.queryByTestId("spire-kubectl")).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("spire-restart")).not.toBeDisabled());
+  });
+
+  it("with no cluster configured the Cluster choice is disabled with the reason, and Docker is the selection", async () => {
+    mount({ start: "docker", clusterAvailable: false });
+    await screen.findByTestId("spire-card");
+    await waitFor(() => expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "true"));
+    const cluster = screen.getByTestId("spire-target-cluster");
+    expect(cluster).toBeDisabled();
+    expect(cluster.getAttribute("title")).toMatch(/SPIRE_SERVER_URL is not set/);
+    expect(screen.getByTestId("spire-cluster-off")).toHaveTextContent("SPIRE_SERVER_URL is not set");
+  });
+
+  it("a refused switch keeps the old selection and shows the server's message", async () => {
+    mount({ start: "docker", switchTo: { status: 409, message: "The cluster SPIRE is not configured" } });
+    await screen.findByTestId("spire-card");
+    await waitFor(() => expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "true"));
+    fireEvent.click(screen.getByTestId("spire-target-cluster"));
+    expect(await screen.findByTestId("error")).toHaveTextContent("The cluster SPIRE is not configured");
+    expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("spire-target-cluster")).toHaveAttribute("aria-pressed", "false");
   });
 });
