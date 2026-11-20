@@ -8,7 +8,11 @@
 //     the API can mint tokens the gateway trusts, so it must not be reachable from the internet.
 //  5. Hosts in shipped text are reserved (.invalid / .example) or loopback.
 
+// The lab's own container port (what the server binds inside the container and what the host publishes with
+// HOST_PORT). The host publish is 7829 (the shelf registry's row); the container port stays 7828 so the
+// Dockerfile, healthcheck and docs keep one number.
 export const PORT = 7828;
+export const HOST_PORT = 7829;
 
 export function isLoopbackHost(host) {
   const h = String(host).toLowerCase().replace(/^\[|\]$/g, '');

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PORT, scanHosts } from '../server/src/safety.js';
+import { PORT, HOST_PORT, scanHosts } from '../server/src/safety.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -21,7 +21,7 @@ test('the shelf entry is valid and portable: Tool tier, relative composeFile, th
   assert.equal(e.id, 'spiffe-issuer');
   assert.equal(e.kind, 'Tool');
   assert.equal(e.healthPath, '/api/health');
-  assert.equal(e.url, `http://127.0.0.1:${PORT}`);
+  assert.equal(e.url, `http://127.0.0.1:${HOST_PORT}`);
   assert.ok(!path.isAbsolute(e.composeFile), 'composeFile must be relative or a placeholder');
   assert.ok(!/\/Users\//.test(JSON.stringify(e)), 'no absolute home path');
   assert.ok(e.description.length <= 300);
@@ -57,7 +57,7 @@ test('docker-compose.yml publishes only on 127.0.0.1, and the parser flags anyth
 test('compose and Dockerfile agree on the one port; the container is locked down, restarts, and keeps the keys on a volume (rules 18, 21)', () => {
   const compose = read('docker-compose.yml');
   const docker = read('Dockerfile');
-  assert.equal(Number(/\$\{HOST_PORT:-(\d+)\}/.exec(compose)[1]), PORT);
+  assert.equal(Number(/\$\{HOST_PORT:-(\d+)\}/.exec(compose)[1]), HOST_PORT);
   assert.equal(Number(/^EXPOSE (\d+)/m.exec(docker)[1]), PORT);
   assert.match(docker, /^ENV SPIFFE_BIND=0\.0\.0\.0$/m);
   assert.match(docker, /^USER node$/m);
