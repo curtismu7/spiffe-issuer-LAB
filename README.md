@@ -38,7 +38,7 @@ cd spiffe-issuer-LAB
 ./scripts/run.sh          # npm ci, build, doctor, start
 ```
 
-Open http://127.0.0.1:7828/ . With no settings at all it works in Mock: three tokens, the settings page, and a rehearsal table (200, 401, 401). The signing keys are generated at first start in `.data/keys.json` (mode 600, gitignored, never shown or returned by any route).
+Open http://127.0.0.1:7829/ . With no settings at all it works in Mock: three tokens, the settings page, and a rehearsal table (200, 401, 401). The signing keys are generated at first start in `.data/keys.json` (mode 600, gitignored, never shown or returned by any route).
 
 Check a running lab from the outside, with `node:crypto` only (no lab code):
 
@@ -66,12 +66,12 @@ Optional:
 
 ## Ports, and what to do if the port is taken
 
-Ports: spiffe-issuer listens on 7828 (set with PORT, default 7828; the lab accepts only its own port).
-Port range for this app: 7828-7828.
+Ports: spiffe-issuer listens on 7828 (set with PORT, default 7828; the lab accepts only its own port). The host publishes it on 7829 (HOST_PORT, the shelf's registry row).
+Port range for this app: 7829-7829 (host publish; the container port stays 7828).
 
 If the port is taken:
 1. Find what is using it:
-   lsof -iTCP:7828 -sTCP:LISTEN -n -P
+   lsof -iTCP:7829 -sTCP:LISTEN -n -P
 2. If it is an old copy of this app, stop that process: kill <PID>.
 3. If it is something else, stop it. (The Docker form can publish on another host port: HOST_PORT=<other port> docker compose up -d.)
 4. Do not use 8080, 5173, 3000, 4000, 4400, 4510, 4600-4601, 18080, 19080 or 19090.
