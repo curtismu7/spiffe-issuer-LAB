@@ -14,6 +14,7 @@ import { mintAll } from './svid.js';
 import { presentMock, presentReal } from './present.js';
 import { createSpireControl, parseSpireSettings, TargetError, K8S_COMMANDS, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
 import { buildGuide } from './spireGuide.js';
+import { parseDemoSvidSettings, fetchDemoSvid, verifyOffCluster } from './spireDemoSvid.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -72,6 +73,28 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
     const { target } = spireCtl.targetView();
     // The guide's examples use the user's own URL only when the cluster is the target; the Docker demo has no public URL.
     res.json({ ...buildGuide({ trustDomain: cfg.trustDomain, namespace: cfg.namespace, agent: cfg.agent, otherAgent: cfg.otherAgent, serverUrl: target === 'cluster' ? settings.serverUrl : null }), mode: settings.mode, target, serverUrl: settings.serverUrl, problems: settings.problems });
+  });
+  // "Get a demo SVID" (optional): mint a short-lived JWT-SVID from a demo token service the
+  // operator points at (SPIRE_DEMO_TOKEN_URL + SPIRE_DEMO_INVITE_KEY in settings). The invite
+  // key stays server-side; the browser never sees it. The token is verified off-cluster
+  // (issuer JWKS, signature, lifetime, subject) before it is shown with its claims.
+  api.get('/spire/demo-svid/status', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const s = parseDemoSvidSettings(env);
+    res.json({ available: s.available, problems: s.problems });
+  });
+  api.post('/spire/demo-svid', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const s = parseDemoSvidSettings(env);
+    if (!s.available) return res.status(409).json({ ok: false, error: 'not-configured', problems: s.problems });
+    const mint = await fetchDemoSvid({ settings: s, audience: s.audience });
+    if (!mint.ok) return res.status(mint.status >= 400 && mint.status < 500 && mint.status !== 429 ? mint.status : 502).json({ ok: false, error: mint.body?.error || 'mint-failed', message: mint.body?.message });
+    const token = String(mint.body?.token ?? '');
+    const claims = (() => { try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')); } catch { return null; } })();
+    const expectSpiffeId = String(mint.body?.spiffe_id ?? '');
+    const verification = await verifyOffCluster({ token, expectSpiffeId, jwksUrl: mint.body?.jwks_url });
+    // the raw token IS shown (education: tokens are shown raw), but the invite key never is
+    return res.json({ ok: verification.ok, token, claims, verification, serviceError: null });
   });
   api.post('/spire/test', async (_req, res) => {
     res.set('Cache-Control', 'no-store');
