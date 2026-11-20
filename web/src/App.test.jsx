@@ -336,7 +336,7 @@ describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
   const viewOf = (target, clusterAvailable = true) => ({ target, serverUrl: clusterAvailable ? "https://host.example/spire" : null,
     options: { docker: { available: true }, cluster: { available: clusterAvailable, reason: clusterAvailable ? null : "SPIRE_SERVER_URL is not set in this lab's .env" } } });
 
-  const mount = ({ start = "cluster", clusterAvailable = true, switchTo } = {}) => {
+  const mount = ({ start = "cluster", clusterAvailable = true, switchTo, svidStatus = { available: false, problems: [] }, svidResponse = {} } = {}) => {
     stub(NO_SETTINGS);
     const calls = [];
     let current = viewOf(start, clusterAvailable);
@@ -356,6 +356,8 @@ describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
       }
       if (url === "/api/spire/target") return json(current);
       if (url === "/api/spire/test") return json({ ok: true, tested: current.target === "docker" ? "local" : "remote", target: current.target, testedAt: "x", checks: [{ name: "container", ok: true, detail: "up", ms: 1 }] });
+      if (url === "/api/spire/demo-svid/status") return json(svidStatus);
+      if (url === "/api/spire/demo-svid" && init.method === "POST") return json(svidResponse, 200);
       return json({}, 404);
     });
     render(<App />);
@@ -409,5 +411,36 @@ describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
     expect(await screen.findByTestId("error")).toHaveTextContent("The cluster SPIRE is not configured");
     expect(screen.getByTestId("spire-target-docker")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("spire-target-cluster")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("with the demo token service configured, the get-SVID button shows the verification checks, the claims, and the raw token folded away", async () => {
+    const svid = { ok: true, token: "header.payload.sig (not a real token in tests)",
+      claims: { sub: "spiffe://demo/external", aud: ["priv-nhi-abcdefghij0123456789"], exp: 1, iat: 1 },
+      verification: { ok: true, checks: [
+        { name: "shape", ok: true, detail: "ES256" },
+        { name: "signature", ok: true, detail: "verifies against the published key" },
+        { name: "subject", ok: true, detail: "spiffe://demo/external" },
+      ] } };
+    const calls = mount({ svidStatus: { available: true, problems: [] }, svidResponse: svid });
+    await screen.findByTestId("spire-card");
+    expect(screen.getByTestId("spire-demo-svid")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("spire-svid-get"));
+    const result = await screen.findByTestId("spire-svid-result");
+    expect(within(result).getAllByText("pass").length).toBe(3);
+    expect(screen.getByTestId("spire-svid-claims")).toHaveTextContent("spiffe://demo/external");
+    // the raw token is present but folded away inside a closed details
+    const details = within(result).getByText("Raw token (short-lived; a gateway would present it as the bearer)").closest("details");
+    expect(details.open).toBe(false);
+    // the invite key is never in the page
+    expect(document.body.textContent).not.toContain("tokk_");
+    expect(calls.filter((c) => c.url === "/api/spire/demo-svid")).toHaveLength(1);
+  });
+
+  it("with the demo token service unconfigured, the option is visibly off and nothing is fetched", async () => {
+    const calls = mount({ svidStatus: { available: false, problems: [] } });
+    await screen.findByTestId("spire-card");
+    expect(screen.getByTestId("spire-demo-svid-off")).toHaveTextContent(/not configured/);
+    expect(screen.queryByTestId("spire-svid-get")).toBeNull();
+    expect(calls.filter((c) => c.url === "/api/spire/demo-svid")).toHaveLength(0);
   });
 });

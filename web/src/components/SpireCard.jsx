@@ -14,7 +14,10 @@ export default function SpireCard({ busy, setBusy, onError }) {
   const [guide, setGuide] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [startState, setStartState] = useState(null);
-  const [cardBusy, setCardBusy] = useState(null); // "test" | "start" | "restart"
+  const [cardBusy, setCardBusy] = useState(null); // "test" | "start" | "restart" | "svid"
+  const [svidStatus, setSvidStatus] = useState(null); // GET /api/spire/demo-svid/status: { available, problems }
+  const [svid, setSvid] = useState(null); // { ok, token, claims, verification }
+  const [svidError, setSvidError] = useState(null);
 
   const post = useCallback(async (path, payload = {}) => {
     const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -31,6 +34,7 @@ export default function SpireCard({ busy, setBusy, onError }) {
     let live = true;
     fetch("/api/spire/command").then((r) => r.json()).then((c) => { if (live) { setCommand(c.command); setKubectl(Array.isArray(c.kubectl) ? c.kubectl : []); } }).catch(() => {});
     fetch("/api/spire/target").then((r) => (r.ok ? r.json() : null)).then((v) => { if (live && v && v.target) setView(v); }).catch(() => {});
+    fetch("/api/spire/demo-svid/status").then((r) => (r.ok ? r.json() : null)).then((v) => { if (live) setSvidStatus(v); }).catch(() => {});
     loadGuide();
     return () => { live = false; };
   }, [loadGuide]);
@@ -61,6 +65,18 @@ export default function SpireCard({ busy, setBusy, onError }) {
       if (kind === "start" && r.body?.test) setTestResult(r.body.test);
     } catch (e) {
       onError(String(e.message || e));
+    } finally { setBusy(false); setCardBusy(null); }
+  };
+
+  const getSvid = async () => {
+    if (busy || cardBusy) return;
+    setBusy(true); setCardBusy("svid"); onError(null); setSvidError(null); setSvid(null);
+    try {
+      const r = await post("/api/spire/demo-svid", {});
+      if (!r.ok) { setSvidError(r.body?.message || r.body?.problems?.join("; ") || "The demo token service refused the request."); return; }
+      setSvid(r.body);
+    } catch (e) {
+      setSvidError(String(e.message || e));
     } finally { setBusy(false); setCardBusy(null); }
   };
 
@@ -135,6 +151,37 @@ export default function SpireCard({ busy, setBusy, onError }) {
           )}
         </>
       )}
+      {svidStatus?.available && (
+        <div className="spire-demo-svid" data-testid="spire-demo-svid">
+          <div className="spire-actions">
+            <button type="button" data-testid="spire-svid-get" disabled={locked} onClick={getSvid}>{cardBusy === "svid" ? "Working…" : "Get a demo SVID from the shared SPIRE"}</button>
+          </div>
+          {svidError && <p className="field-error" role="alert" data-testid="spire-svid-error">{visible(svidError)}</p>}
+          {svid && (
+            <div className="spire-table" data-testid="spire-svid-result">
+              <table className="results">
+                <thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {svid.verification.checks.map((c) => (
+                    <tr key={c.name} data-testid={`spire-svid-check-${c.name}`}>
+                      <td>{c.name}</td>
+                      <td><Chip ok={c.ok}>{c.ok ? "pass" : "fail"}</Chip></td>
+                      <td>{visible(c.detail)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="card__note" data-testid="spire-svid-claims">Claims: <code>{visible(JSON.stringify(svid.claims))}</code></p>
+              <details>
+                <summary>Raw token (short-lived; a gateway would present it as the bearer)</summary>
+                <pre className="spire-code" tabIndex={0} data-testid="spire-svid-token">{visible(svid.token)}</pre>
+              </details>
+              <p className="card__note">Verified off-cluster the way a gateway's Federated Identity would: the issuer's published keys, the signature, the 5-minute lifetime and the subject. This token is for the demo door only and is not trusted by any other tenant.</p>
+            </div>
+          )}
+        </div>
+      )}
+      {svidStatus && !svidStatus.available && <p className="card__note" data-testid="spire-demo-svid-off">A shared SPIRE demo token service is not configured in this lab's .env, so the "get a demo SVID" option is off. The Docker and Cluster SPIRE checks above work without it.</p>}
       {guide && (
         <details className="spire-guide" data-testid="spire-guide">
           <summary>Set up SPIRE on your side</summary>
