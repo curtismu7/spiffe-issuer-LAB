@@ -11,7 +11,7 @@ services:
       - "127.0.0.1:${HOST_PORT:-7829}:7828"
     environment:
       PORT: "7828"
-      SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
+      SHELF_URL: ${SHELF_URL:-https://local.ping-devops.com:8443/demo-shelf}
       # The name the family lab-proxy (https://local.ping-devops.com:8443) sends in Host; loopback is always accepted.
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-spiffe-issuer.local.ping-devops.com}
     env_file:
