@@ -7,6 +7,18 @@ const Chip = ({ ok, children }) => <span className={`chip ${ok ? "chip--ok" : "c
 
 const TARGET_LABEL = { docker: "Docker demo SPIRE (on this machine)", cluster: "Cluster SPIRE (Kubernetes, your own)" };
 
+// Verification check ids from the server, shown in plain words. Anything unmapped falls back to the raw id.
+const SVID_CHECK_LABEL = {
+  shape: "Well-formed JWT (ES256)",
+  lifetime: "Short-lived (5 minutes or less)",
+  expiry: "Not expired yet",
+  "keys-published": "Issuer publishes its public keys",
+  signature: "Signature verifies",
+  subject: "Subject is this lab's SPIFFE ID",
+};
+
+const fmtTime = (sec) => (Number.isFinite(sec) ? new Date(sec * 1000).toLocaleTimeString() : "?");
+
 export default function SpireCard({ busy, setBusy, onError }) {
   const [command, setCommand] = useState(null);
   const [kubectl, setKubectl] = useState([]);
@@ -153,6 +165,12 @@ export default function SpireCard({ busy, setBusy, onError }) {
       )}
       {svidStatus?.available && (
         <div className="spire-demo-svid" data-testid="spire-demo-svid">
+          <p className="card__note">
+            This is the real thing, not a lab mock: the button asks the shared cluster SPIRE to mint a
+            JWT-SVID for this lab's identity, then checks it the way a Privilege Federated Identity does —
+            fetch the issuer's public keys from the internet, verify the signature, and only trust what passes.
+            It is the same check an MCP gateway runs on an agent's token before opening the door.
+          </p>
           <div className="spire-actions">
             <button type="button" data-testid="spire-svid-get" disabled={locked} onClick={getSvid}>{cardBusy === "svid" ? "Working…" : "Get a demo SVID from the shared SPIRE"}</button>
           </div>
@@ -164,19 +182,24 @@ export default function SpireCard({ busy, setBusy, onError }) {
                 <tbody>
                   {svid.verification.checks.map((c) => (
                     <tr key={c.name} data-testid={`spire-svid-check-${c.name}`}>
-                      <td>{c.name}</td>
+                      <td>{SVID_CHECK_LABEL[c.name] ?? c.name}</td>
                       <td><Chip ok={c.ok}>{c.ok ? "pass" : "fail"}</Chip></td>
                       <td>{visible(c.detail)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <p className="card__note" data-testid="spire-svid-claims">Claims: <code>{visible(JSON.stringify(svid.claims))}</code></p>
+              <dl className="spire-claims" data-testid="spire-svid-claims">
+                <div><dt>Who (subject)</dt><dd>{visible(svid.claims?.sub ?? "?")}</dd></div>
+                <div><dt>Minted for (audience)</dt><dd>{visible([].concat(svid.claims?.aud ?? []).join(", ") || "?")}</dd></div>
+                <div><dt>Issuer</dt><dd>{visible(svid.claims?.iss ?? "?")}</dd></div>
+                <div><dt>Issued</dt><dd>{fmtTime(svid.claims?.iat)}</dd></div>
+                <div><dt>Expires</dt><dd>{fmtTime(svid.claims?.exp)}{svid.claims?.exp ? ` (in ${Math.max(0, svid.claims.exp - Math.floor(Date.now() / 1000))}s)` : ""}</dd></div>
+              </dl>
               <details>
                 <summary>Raw token (short-lived; a gateway would present it as the bearer)</summary>
                 <pre className="spire-code" tabIndex={0} data-testid="spire-svid-token">{visible(svid.token)}</pre>
               </details>
-              <p className="card__note">Verified off-cluster the way a gateway's Federated Identity would: the issuer's published keys, the signature, the 5-minute lifetime and the subject. This token is for the demo door only and is not trusted by any other tenant.</p>
             </div>
           )}
         </div>
