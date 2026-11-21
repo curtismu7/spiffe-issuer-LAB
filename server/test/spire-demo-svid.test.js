@@ -111,3 +111,28 @@ test('verifyOffCluster: an expired token fails the lifetime check', async () => 
   assert.equal(r.checks.find((c) => c.name === 'expiry').ok, false);
   assert.equal(r.ok, false);
 });
+
+test('fetchDemoSvid: the visitor chain is forwarded as x-forwarded-for, lab secrets are not', async () => {
+  const s = parseDemoSvidSettings({ SPIRE_DEMO_TOKEN_URL: 'https://spire.example.invalid/demo', SPIRE_DEMO_INVITE_KEY: KEY, SPIRE_DEMO_AUDIENCE: 'priv-nhi-abcdefghij0123456789' });
+  let seen = null;
+  await fetchDemoSvid({
+    settings: s,
+    audience: s.audience,
+    forwardedFor: '203.0.113.9, 10.0.0.2',
+    fetchImpl: async (_url, init) => { seen = init.headers; return { ok: true, json: async () => ({}) }; },
+  });
+  assert.equal(seen['x-forwarded-for'], '203.0.113.9, 10.0.0.2');
+  // the invite key still travels, but only in its header
+  assert.equal(seen['x-invite-key'], KEY);
+});
+
+test('fetchDemoSvid: no forwardedFor means no x-forwarded-for header is sent', async () => {
+  const s = parseDemoSvidSettings({ SPIRE_DEMO_TOKEN_URL: 'https://spire.example.invalid/demo', SPIRE_DEMO_INVITE_KEY: KEY, SPIRE_DEMO_AUDIENCE: 'priv-nhi-abcdefghij0123456789' });
+  let seen = null;
+  await fetchDemoSvid({
+    settings: s,
+    audience: s.audience,
+    fetchImpl: async (_url, init) => { seen = init.headers; return { ok: true, json: async () => ({}) }; },
+  });
+  assert.equal(seen['x-forwarded-for'], undefined);
+});
