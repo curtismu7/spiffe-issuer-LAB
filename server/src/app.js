@@ -87,7 +87,9 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
     res.set('Cache-Control', 'no-store');
     const s = parseDemoSvidSettings(env);
     if (!s.available) return res.status(409).json({ ok: false, error: 'not-configured', problems: s.problems });
-    const mint = await fetchDemoSvid({ settings: s, audience: s.audience });
+    // forward the visitor chain so the token service can rate-limit per visitor
+    const forwardedFor = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '');
+    const mint = await fetchDemoSvid({ settings: s, audience: s.audience, forwardedFor });
     if (!mint.ok) return res.status(mint.status >= 400 && mint.status < 500 && mint.status !== 429 ? mint.status : 502).json({ ok: false, error: mint.body?.error || 'mint-failed', message: mint.body?.message });
     const token = String(mint.body?.token ?? '');
     const claims = (() => { try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')); } catch { return null; } })();

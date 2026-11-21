@@ -45,7 +45,7 @@ export function parseDemoSvidSettings(env = process.env) {
 }
 
 // POST {audience} to the service with the invite key header. -> { ok, status, body }
-export async function fetchDemoSvid({ settings, audience, fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export async function fetchDemoSvid({ settings, audience, forwardedFor, fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
   if (!settings?.available) return { ok: false, status: 0, body: { error: 'demo-svid-not-configured' } };
   if (typeof audience !== 'string' || !AUDIENCE_RE.test(audience)) {
     return { ok: false, status: 400, body: { error: 'bad-audience', message: 'audience must match priv-nhi-[a-z0-9]{20,40}' } };
@@ -53,9 +53,13 @@ export async function fetchDemoSvid({ settings, audience, fetchImpl = fetch, tim
   const origin = new URL(settings.url).origin;
   setAllowedOrigins([origin]);
   try {
+    const headers = { 'content-type': 'application/json', 'x-invite-key': settings.key };
+    // per-visitor rate limiting at the service: forward the visitor's identity
+    // (the proxy chain), never any lab secret
+    if (typeof forwardedFor === 'string' && forwardedFor && forwardedFor.length < 256) headers['x-forwarded-for'] = forwardedFor;
     const r = await fetchImpl(settings.url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-invite-key': settings.key },
+      headers,
       body: JSON.stringify({ audience }),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'error',
