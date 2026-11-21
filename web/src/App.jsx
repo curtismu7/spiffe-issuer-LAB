@@ -7,6 +7,7 @@ import TokenCards from "./components/TokenCards.jsx";
 import Results from "./components/Results.jsx";
 
 const REPO = "https://github.com/curtismu7/spiffe-issuer-LAB#readme";
+const PF_GUIDE = "https://github.com/curtismu7/spiffe-issuer-LAB/blob/main/docs/pf-setup-guide/pingfederate-spire-setup-guide.pdf";
 const post = async (url, payload) => {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
   let body = {};
@@ -81,6 +82,7 @@ export default function App() {
           help={{ href: REPO }}
           version={info.version ? `v${info.version}` : undefined}
         >
+          <a className="shelf-link" href={PF_GUIDE} target="_blank" rel="noreferrer" title="How to accept SPIRE JWT-SVIDs in your own PingFederate (PDF, three modes)">PF guide</a>
           <ShelfLink />
         </TopMenu>
       </header>
