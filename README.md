@@ -123,6 +123,39 @@ The lab is a token minter, not SPIRE. The **SPIRE server control** card helps yo
 - **Cluster SPIRE (your own).** Put `SPIRE_SERVER_URL=https://<host>[/<prefix>]` in `.env` (optionally `SPIRE_AGENT_URL`, and `SPIRE_ALLOWED_HOSTS` for another origin that serves the keys). The card then tests THAT: discovery at `<base>/.well-known/openid-configuration` and the keys at the discovery `jwks_uri`, falling back to SPIRE's default `<base>/keys` (behind a path-rewriting ingress the discovery `jwks_uri` often points at the wrong place, and the card says so and tells you which URL to use). A pass means the keys are public, have a `kid`, and hold no private material; it cannot prove the server is SPIRE, so read the issuer and key algorithm it shows. A set but invalid URL is reported, never silently replaced by the Docker demo. Start and Restart do nothing on Cluster.
 - **Network.** Testing your own SPIRE reaches only the origins you configured, only while you press Test, with no redirect followed (netguard). Mock mode otherwise makes no outbound call.
 
+### Get a demo SVID from the shared cluster SPIRE (owner-provided)
+
+Instead of running your own SPIRE, the owner can connect this lab to a shared cluster
+SPIRE through a small token service. With it configured, the SPIRE card shows a
+**"Get a demo SVID from the shared SPIRE"** button: it mints a real, short-lived
+JWT-SVID (5 minutes) for this lab's identity, verifies it off-cluster exactly the way a
+Privilege Federated Identity would — fetch the issuer's published keys, check the
+signature, the lifetime, the expiry and the subject — and shows the decoded claims
+(with the raw token folded away). It is the same check an MCP gateway runs on an
+agent's token before opening the door.
+
+To enable it, ask the owner for these three values (they are per person; the invite
+key is a secret and never appears in the page, the logs or the repo), then put them in
+the lab's `.env` and `docker compose up -d`:
+
+| `.env` setting | What it is |
+|---|---|
+| `SPIRE_DEMO_TOKEN_URL` | The demo token service URL (ends in `/token`) |
+| `SPIRE_DEMO_INVITE_KEY` | Your personal invite key (write-only: sent only server-to-service) |
+| `SPIRE_DEMO_AUDIENCE` | The audience your tokens are minted for — the `priv-nhi-…` value of the Federated Identity on the Privilege side |
+
+Where to see the values: the **"Federated Identity values for Privilege"** card (step 1
+on the Settings page) always shows this lab's live configuration — the issuer
+(`PUBLIC_URL`), the JwksURI, the subject (SPIFFE ID) and the audience of the door. When
+the shared-SPIRE option is on, the SPIRE card's SVID section adds the one value the
+shared setup uses instead of the door URL: the `priv-nhi-…` audience, shown as
+**Minted for (audience)** under the claims of every minted SVID. For the shared setup
+the owner pairs the Federated Identity's audience with your invite key; the lab itself
+needs no Privilege access.
+
+Without the three settings the section reads "not configured" and everything else works
+as documented above. The Docker and Cluster checks do not depend on it.
+
 ### Verify a token from the outside (no cluster access)
 
 Anyone can check that the published keys really verify a real token. The token comes from the environment or stdin, never an argument, and is never printed:
