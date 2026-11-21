@@ -78,3 +78,8 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywh
 .spire-claims > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
 .spire-claims dt { font-size: 0.8125rem; font-weight: 600; color: var(--text-muted, #555); min-width: 11em; }
 .spire-claims dd { margin: 0; font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }
+
+/* Links & help card: the shareable links (lab-proxy demo, shelf, repo, PF guide). */
+.help-links { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.help-links a { color: var(--accent); font-weight: 600; }
+.help-links__note { color: var(--text-muted, #555); font-size: 0.875rem; }
