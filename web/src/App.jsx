@@ -5,6 +5,7 @@ import Settings from "./components/Settings.jsx";
 import SpireCard from "./components/SpireCard.jsx";
 import TokenCards from "./components/TokenCards.jsx";
 import Results from "./components/Results.jsx";
+import HelpCard from "./components/HelpCard.jsx";
 
 const REPO = "https://github.com/curtismu7/spiffe-issuer-LAB#readme";
 const PF_GUIDE = "https://github.com/curtismu7/spiffe-issuer-LAB/blob/main/docs/pf-setup-guide/pingfederate-spire-setup-guide.pdf";
@@ -100,6 +101,7 @@ export default function App() {
         <SpireCard busy={busy} setBusy={setBusy} onError={setError} />
         <TokenCards tokens={tokens?.tokens} config={c} onMint={() => mint(app)} />
         <Results run={run} real={real} busy={busy} onPresent={present} />
+        <HelpCard />
       </main>
     </div>
   );
