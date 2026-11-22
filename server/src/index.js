@@ -24,6 +24,6 @@ if (!allPassed(checks)) {
 }
 const health = createHealth({ runChecks: () => runChecks({ store }) });
 const host = assertBindAllowed(bindHost(), process.env);
-const { url } = await startHttpServer({ port: resolvePort(), host, app: createApp({ store, health }) });
+const { url } = await startHttpServer({ port: resolvePort(), host, app: createApp({ store, health, logLine: (line) => process.stdout.write(`${line}\n`) }) });
 console.log(`[spiffe-issuer] lab listening on ${url}. Public keys: ${url}.well-known/jwks.json`);
 console.log(`[spiffe-issuer] issuer ${cfg.issuer}${cfg.publicUrlSet ? '' : ' (PUBLIC_URL is not set: placeholder, Real cannot run)'}; Real ${cfg.realAvailable ? 'is configured' : 'is not configured'}`);

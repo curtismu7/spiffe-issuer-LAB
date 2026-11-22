@@ -12,6 +12,8 @@ import { mountShelfRoute } from './shelfLink.js';
 import { publicConfig, readConfig } from './config.js';
 import { mintAll } from './svid.js';
 import { presentMock, presentReal } from './present.js';
+import { RunObsError } from './runObservability.js';
+import { createRunLog, buildRunRecord, eventOf, NO_RUN } from './runLog.js';
 import { createSpireControl, parseSpireSettings, TargetError, K8S_COMMANDS, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
 import { buildGuide } from './spireGuide.js';
 import { parseDemoSvidSettings, fetchDemoSvid, verifyOffCluster } from './spireDemoSvid.js';
@@ -21,7 +23,7 @@ const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { return null; } })();
 const UNREACHABLE = new Set(['mcp_unreachable', 'mcp_timeout']);
 
-export function createApp({ store, env = process.env, now = Date.now, health = createHealth(), spire } = {}) {
+export function createApp({ store, env = process.env, now = Date.now, health = createHealth(), spire, logLine = () => {} } = {}) {
   if (!store) throw new Error('createApp needs a key store');
   const app = express();
   app.disable('x-powered-by');
@@ -40,6 +42,14 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
 
   // Rule 19: the runtime mode starts Real when it is configured (rule 26: a rebuild must not silently drop to Mock), else Mock.
   let source = readConfig(env).realAvailable ? 'real' : 'mock';
+
+  // Run observability (rule 27): the decisions of each present run, one stdout line each (logLine), read back by GET /api/run-observability.
+  const runs = createRunLog({ now, write: logLine });
+  const logRun = (rows) => {
+    const run = runs.begin(rows[0].source); // the mode the rows were made in, not the toggle's value after a slow Real call
+    for (const r of rows) runs.record(run, eventOf(r));
+    runs.end(run);
+  };
 
   const api = express.Router();
   api.use(apiNotThroughTunnel);
@@ -151,14 +161,29 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
     const base = { source, audience, issuedAt: new Date(now()).toISOString(), tokens: tokens.map(tokenView) };
     if (source === 'mock') {
       const doorUrl = audience;
-      return res.json({ ...base, rows: presentMock({ doorUrl, store, cfg, tokens, now: now() }) });
+      const rows = presentMock({ doorUrl, store, cfg, tokens, now: now() });
+      logRun(rows);
+      return res.json({ ...base, rows });
     }
     const rows = await presentReal({ doorUrl: audience, origin: cfg.gatewayOrigin, tokens });
+    logRun(rows);
     // Rule 23: a gateway that cannot be reached is a named JSON error, never a blank page or an empty 200.
     if (rows.every((r) => UNREACHABLE.has(r.error))) {
       return res.status(502).json({ ...base, rows, error: 'gateway_unreachable', message: `The gateway could not be reached: ${rows[0].words}` });
     }
     return res.json({ ...base, rows });
+  });
+
+  // The record of the newest run made in the current mode (null with a message when there is none). Rule 23: a failure is {error, message} JSON.
+  api.get('/run-observability', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const run = runs.latest(source);
+    if (!run) return res.json({ record: null, message: NO_RUN[source] });
+    try { return res.json({ record: await buildRunRecord({ run, clock: now }) }); } catch (e) {
+      const known = e instanceof RunObsError;
+      console.error('run-observability:', known ? e.code : 'unexpected', known ? e.message : String(e?.message).slice(0, 200));
+      return res.status(known ? e.status : 500).json({ error: known ? e.code : 'run_observability_failed', message: known ? e.message : 'The run record could not be built inside the lab.' });
+    }
   });
 
   api.use((_req, res) => res.status(404).json({ error: 'not_found' }));

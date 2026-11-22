@@ -166,11 +166,30 @@ TOKEN=<jwt-svid> node scripts/verify-svid.mjs https://<host>[/<prefix>]/keys --i
 
 Exit 0: the signature verifies against the published key and every expectation holds. Exit 1: it does not (unknown key, bad signature, expired, a wrong iss/sub/aud). Exit 2: bad usage. This is the key-publishing half of the chain; the gateway's own decision is the 200/401 call in the last step of the in-page guide.
 
+## What each layer logged for this run (rule 27)
+
+Under the result of "Present to the gateway" the page shows the shared panel "What each layer logged for this run": one present run, in time order, over six layers (Person, Agent, Authorize, Privilege, Agent gateway, Resource server), each row with its timestamp and an origin tag. The record comes from `GET /api/run-observability` for the page's current mode.
+
+| Layer | What this lab shows |
+|---|---|
+| Person | not logged: no person signs in; the caller is a workload named by its SPIFFE ID |
+| Agent | not logged: the workload's identity is the SPIFFE ID in each token's `sub` (named on the gateway rows); the lab mints the token itself and no product logs that |
+| Authorize | not logged: the lab does not call PingOne Authorize |
+| Privilege | not logged: the lab sees only the gateway's HTTP reply, not Privilege policy, AI Guard or approval events |
+| Agent gateway | one row per token. Mock: `simulated`, from the lab's own verification of the token against its published keys (200 allowed, 401 refused). Real: `response`, the reply the gateway sent (401 and 403 refused; 200 allowed only when the JSON-RPC answer holds a result that is not a tool error; an error inside a 200 refused; an unparsed answer, a 200 whose `result` is missing or null, or any other status is information; a token that got no answer (the call dropped or timed out) gets no row, and the layer says how many of the three did not answer, or, when none did, that no reply was received) |
+| Resource server | not logged: the lab calls no tool, only `tools/list` |
+
+Nothing is ever tagged `logged`: this lab reads no product log (no Elasticsearch, no Docker socket, no `RUN_OBS_*` setting), and a Real row is a reply the lab received, not a gateway log line. The time on a row is when the lab recorded the reply, after the whole present call finished (the three tokens go one after the other, up to 15 seconds each), not when the gateway answered or wrote anything. For a 200 whose answer holds no `tools/list` result the table above can say "accepted: tools/list returned 0 tools" (the lab's own reading) while the panel row is information ("does not say whether it was accepted"): the panel never counts that as a pass. A record belongs to the mode its run was made in: a Mock run is never shown as a Real reply after the toggle. The lab's cases are the three it mints (valid, another workload ID, an unpublished key); it does not mint a wrong-audience or expired token, so those refusals appear only if your gateway answers that way.
+
+**Where the logs live and where they stream.** The lab writes one stdout line per decision, `<time> spiffe-issuer-lab decision step=present actor=<spiffe id> case=<valid|other-id|other-key> status=<http status|none> result=<passed|stopped|unclear|no-reply> mode=<mock|real> run=<id>`: never a token. In the container it is on stdout; the family collector (`shared/ping-log-collector`) can ship container stdout to `demo-logs-<service>` and on to a SIEM; this panel does not read that stream back. The gateway's own logs live where the gateway writes them (the Privilege gateway in its log volume or, hosted, in the Privilege SIEM index and Activity Logs); those are not read here either, and a refusal line for a rejected call has not been confirmed in any gateway log. The panel is an excerpt: ids, tokens and addresses are masked.
+
+The panel files are vendored byte for byte from `AI-DEMO-Standalone/shared/run-observability/` and pinned (`web/src/run-observability/run-observability.sha256`, checked by `scripts/run-observability-checkPin.mjs`); change the canonical first, never the copy.
+
 ## Health, doctor and reset
 
 - `GET /api/health` returns `demo-health/1` (public, GET only, no detail).
 - `npm run doctor` prints one line per check and exits 1 on failure: Node, settings, bind, port, JWKS holds the public half only, the untrusted key is unpublished, the three tokens verify or fail as designed, the 300-second cap, netguard self-test, and (as information) whether Real is configured.
-- Reset: this is a Tool-tier lab with no run state to clear; the page holds the last result in the browser. To rotate the signing keys, stop the lab and delete `.data/keys.json` (or the `spiffe-issuer-data` volume); the JWKS changes at the next start.
+- Reset: this is a Tool-tier lab with no Reset action. The page holds the last result in the browser, and the server keeps the run records of the panel (up to 3 closed runs per mode) in memory until the lab restarts. To rotate the signing keys, stop the lab and delete `.data/keys.json` (or the `spiffe-issuer-data` volume); the JWKS changes at the next start.
 
 ## Docker (optional)
 
@@ -186,7 +205,7 @@ Publishes `127.0.0.1:7828` only (never change that), runs read-only with no capa
 npm test          # server (node --test), web (vitest), repo and compose checks
 ```
 
-Node 26: server 30 pass, web 27 pass (8 of them the lab's own App tests, 19 the vendored gateway-trace tests), repo checks 11 pass. The tests verify the three tokens against the published JWKS with an independent `node:crypto` check, the 300-second cap, that no private key reaches any API response or log, the netguard (one origin, and only while presenting), and a Real present against a loopback stand-in for a door. A Real run against a Privilege gateway is the owner's; no test claims it.
+Node 26: server 88 pass, web 76 pass, repo checks 16 pass (before the run observability panel: 70, 42 and 16). The tests verify the three tokens against the published JWKS with an independent `node:crypto` check, the 300-second cap, that no private key reaches any API response or log, the netguard (one origin, and only while presenting), and a Real present against a loopback stand-in for a door. A Real run against a Privilege gateway is the owner's; no test claims it.
 
 ## Troubleshooting
 

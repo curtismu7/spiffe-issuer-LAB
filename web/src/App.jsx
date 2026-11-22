@@ -5,6 +5,7 @@ import Settings from "./components/Settings.jsx";
 import SpireCard from "./components/SpireCard.jsx";
 import TokenCards from "./components/TokenCards.jsx";
 import Results from "./components/Results.jsx";
+import RunRecord from "./components/RunRecord.jsx";
 import HelpCard from "./components/HelpCard.jsx";
 
 const REPO = "https://github.com/curtismu7/spiffe-issuer-LAB#readme";
@@ -21,6 +22,7 @@ export default function App() {
   const [app, setApp] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [run, setRun] = useState(null);
+  const [runKey, setRunKey] = useState(0); // changes when a present finished; null when the last attempt began no run (rule 27 panel)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem("theme") || "auto"; } catch { return "auto"; } });
@@ -49,7 +51,7 @@ export default function App() {
 
   const setMode = async (source) => {
     const r = await post("/api/mode", { source });
-    if (r.ok) { setInfo((i) => ({ ...i, source })); setRun(null); }
+    if (r.ok) { setInfo((i) => ({ ...i, source })); setRun(null); setRunKey(0); }
     return r.ok;
   };
 
@@ -61,8 +63,10 @@ export default function App() {
       const r = await post("/api/present", { app: app ?? undefined });
       // A 502 still carries rows and a named message (the gateway could not be reached); a 409 carries what is missing.
       if (r.body.rows) { setRun(r.body); setTokens(r.body); }
+      // Only a refusal before any run (a 4xx without rows) began no run; anything else may have logged one, so read again.
+      setRunKey((k) => (!r.body.rows && r.status >= 400 && r.status < 500 ? null : (k ?? 0) + 1));
       if (!r.ok) setError(r.body.message || r.body.error || `HTTP ${r.status}`);
-    } catch (e) { setError(String(e.message || e)); } finally { setBusy(false); }
+    } catch (e) { setError(String(e.message || e)); setRunKey((k) => (k ?? 0) + 1); } finally { setBusy(false); }
   };
 
   if (!info) return error ? <p className="app-error">The lab could not start: {error}</p> : <p className="muted">Loading…</p>;
@@ -101,6 +105,7 @@ export default function App() {
         <SpireCard busy={busy} setBusy={setBusy} onError={setError} />
         <TokenCards tokens={tokens?.tokens} config={c} onMint={() => mint(app)} />
         <Results run={run} real={real} busy={busy} onPresent={present} />
+        <RunRecord source={info.source} runKey={runKey} />
         <HelpCard />
       </main>
     </div>
