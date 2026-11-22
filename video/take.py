@@ -218,28 +218,33 @@ def fill(text, **vals):
         text = text.replace("{" + k + "}", str(v))
     return text
 
-def get_json(url, timeout=15):
+def get_json(url, timeout=15, verify=False):
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE   # the family lab-proxy uses a local mkcert CA
+    if not verify: ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE   # the family lab-proxy uses a local mkcert CA; the public key list is fetched with verify=True
     with urllib.request.urlopen(url, timeout=timeout, context=ctx) as r:
         return r.status, json.loads(r.read().decode())
 
 def preflight(info, jwks_url):
-    """The script's 'checks before recording': what must be true of the live system for the captions to be true. Returns (ok, notes)."""
-    notes = []; ok = True
+    """The script's 'checks before recording': what must be true of the live system for the captions to be true. Returns (ok, notes, published_kids)."""
+    notes = []; ok = True; kids = set(); cfg = info.get("config", {})
     if not SAMPLE:
         if info.get("source") != "real": ok = False; notes.append("mode is not Real: " + str(info.get("source")))
-        if not info["config"].get("publicUrlSet"): ok = False; notes.append("PUBLIC_URL is not set")
+        if not cfg.get("publicUrlSet"): ok = False; notes.append("PUBLIC_URL is not set")
+        if not jwks_url.startswith("https://"): ok = False; notes.append("the key list URL is not https")
+    if cfg.get("alg") != "RS256": ok = False; notes.append("alg is not RS256 (the captions name n and e)")
+    if cfg.get("untrustedMode") != "key": ok = False; notes.append("untrusted mode is not 'key' (the caption says only the key differs)")
     try:
-        status, jwks = get_json(jwks_url)
+        status, jwks = get_json(jwks_url, verify=not SAMPLE)   # real: normal certificate checking on the public URL
         keys = jwks.get("keys", [])
         private = [k for k in keys if any(f in k for f in ("d", "p", "q", "dp", "dq", "qi"))]
+        kids = {k.get("kid") for k in keys}
         if status != 200 or len(keys) != 1 or private: ok = False; notes.append(f"key list: status {status}, {len(keys)} key(s), private fields {bool(private)}")
-        elif keys[0].get("kid") != info["config"].get("trustedKid"): ok = False; notes.append("published kid differs from the lab's trusted kid")
-        else: notes.append("key list ok: 1 key, no private fields, kid matches")
+        elif not (keys[0].get("n") and keys[0].get("e") and keys[0].get("kty") == "RSA"): ok = False; notes.append("the published key is not an RSA key with n and e")
+        elif keys[0].get("kid") != cfg.get("trustedKid"): ok = False; notes.append("published kid differs from the lab's trusted kid")
+        else: notes.append("key list ok: 1 RSA key (n, e), no private fields, kid matches, fetched with certificate checking" if not SAMPLE else "key list ok (sample, loopback)")
     except Exception as e:
         ok = False; notes.append(f"key list not reachable at {jwks_url}: {e}")
-    return ok, notes
+    return ok, notes, kids
 
 def console_check(info):
     """Read-only: GET the Federated Identity, the agent key and the grant from the Privilege console API and compare them with the live lab,
@@ -248,7 +253,9 @@ def console_check(info):
     tenant = os.environ.get("PRIV_TENANT")
     if not tenant: return False, ["PRIV_TENANT is not set: the setup slide was not re-read"], None
     names = dict(nhi=os.environ.get("PRIV_NHI", "spiffe-issuer-lab-svid"), key=os.environ.get("PRIV_KEY", "spiffe-lab-svid"), grant=os.environ.get("PRIV_GRANT", "spiffe-lab-svid-aggregate-limited"))
-    base = os.environ.get("CONSOLE_API", "https://local.procyon.ai:8643") + f"/api/{tenant}/v1/"
+    api = os.environ.get("CONSOLE_API")   # the Privilege desktop app's local console API origin; no default is kept in this public repo
+    if not api: return False, ["CONSOLE_API is not set: the setup slide was not re-read"], None
+    base = api.rstrip("/") + f"/api/{tenant}/v1/"
     b64 = lambda s: base64.b64encode(s.encode()).decode()
     cfg = info["config"]; notes = []; bad = []
     def get(path):
@@ -291,17 +298,17 @@ def main():
     result = {"ok": False, "checks": []}
     info = get_json(base + "/api/info")[1]
     jwks_url = (base + "/.well-known/jwks.json") if SAMPLE else info["config"]["jwksUrl"]
-    pre_ok, pre_notes = preflight(info, jwks_url)
+    pre_ok, pre_notes, published = preflight(info, jwks_url)
     result["checks"] += pre_notes; log("preflight:", pre_ok, pre_notes)
     if not pre_ok:
         (WORK / "result.json").write_text(json.dumps(result, indent=1)); print("preflight failed:", pre_notes); sys.exit(3)
-    ttl = info["config"]["ttlSeconds"]
+    ttl = info["config"]["ttlSeconds"]; cfg = info["config"]
     con_ok, con_notes, con_date = console_check(info)
     result["checks"] += con_notes; log("console check:", con_ok, con_notes)
     if not con_ok and not SAMPLE:
         (WORK / "result.json").write_text(json.dumps(result, indent=1)); print("console check failed:", con_notes); sys.exit(3)
     setup_slide = dict(SLIDES["setup"])
-    setup_slide["lead"] = fill(setup_slide["lead"], date=con_date or "(sample: not re-read today)")
+    setup_slide["lead"] = fill(setup_slide["lead"], date=con_date or "an earlier day (the real take re-reads them)")
     with sync_playwright() as pw:
         ctx = pw.chromium.launch_persistent_context(
             profile, headless=HEADLESS, no_viewport=not HEADLESS, viewport={"width": WIN_W, "height": 900} if HEADLESS else None,
@@ -364,7 +371,8 @@ def main():
             pg = pg or page
             count["n"] += 1
             st = STEPS[sample_key] if (SAMPLE and sample_key) else STEPS[key]
-            title, text = fill(st["title"], ttl=ttl, **vals), fill(st["text"], ttl=ttl, **vals)
+            vals.setdefault("ttl", ttl)
+            title, text = fill(st["title"], **vals), fill(st["text"], **vals)
             pg.evaluate("o => window.__cm.cap(o)", dict(n=count["n"], total=TOTAL, title=title, text=text, target=target, lines=lines, prefer=prefer, place=place))
             snap(f"step-{count['n']:02d}-{key}", pg)
             pg.wait_for_timeout(int((secs if secs is not None else hold(text + " ".join(lines or []))) * 1000 * slow))
@@ -391,16 +399,46 @@ def main():
             if not ok: log("payload block not found in", card_testid)
             return ok
 
+        def read_card(testid):
+            """The decoded header and payload rows of one token card, as shown on the page."""
+            return page.evaluate("""t => { const card = document.querySelector('[data-testid=' + t + ']'); const out = {};
+                card.querySelectorAll('.jdec__card .jform__row').forEach((r) => { const k = r.querySelector('dt'), v = r.querySelector('dd');
+                    if (k && v && !(k.textContent.trim() in out)) out[k.textContent.trim()] = v.textContent.trim(); }); return out; }""", testid)
+
+        def check_tokens():
+            """What the captions say about the three tokens, checked on the decoded tokens that are on screen. Raises if any is untrue."""
+            v, m, u = read_card("token-valid"), read_card("token-mismatched"), read_card("token-untrusted")
+            num = lambda x: int(str(x).split()[0])
+            problems = []
+            if v.get("alg") != "RS256": problems.append("valid alg is not RS256")
+            if v.get("kid") not in published: problems.append("valid kid is not in the published key list")
+            if v.get("sub") != cfg["validSub"]: problems.append("valid sub is not the configured SPIFFE ID")
+            if v.get("aud") != cfg["audience"] or v.get("iss") != cfg["issuer"]: problems.append("valid aud or iss differ from the configuration")
+            if num(v.get("exp", 0)) - num(v.get("iat", 0)) != ttl: problems.append("valid exp - iat is not the configured lifetime")
+            for k in ("alg", "kid", "iss", "aud", "iat", "exp"):
+                if m.get(k) != v.get(k): problems.append(f"mismatched differs from valid in {k}")
+            if m.get("sub") in (None, v.get("sub")): problems.append("mismatched sub equals valid sub")
+            for k in ("alg", "iss", "aud", "sub", "iat", "exp"):
+                if u.get(k) != v.get(k): problems.append(f"untrusted differs from valid in {k}")
+            if u.get("kid") == v.get("kid") or u.get("kid") in published: problems.append("untrusted kid is published or equals the valid kid")
+            if problems: raise RuntimeError("tokens are not as the captions say: " + "; ".join(problems))
+            result["checks"].append("tokens as captioned: mismatched differs only in sub, untrusted only in kid (not published), exp - iat = %d s" % ttl)
+            return num(v["exp"]) - num(v["iat"])
+
         ok = False
         try:
             if SAMPLE:   # the sample's private stand-in is in Mock mode already (services.sh); make sure the page agrees
                 assert page.locator("[data-testid=mode-badge]").inner_text().strip().lower() == "mock", "sample must run in Mock mode"
+            else:
+                assert page.locator("[data-testid=mode-badge]").inner_text().strip().lower() == "real", "the real take must run in Real mode"
+            page.wait_for_timeout(600)
+            if page.evaluate("() => [...document.querySelectorAll('h2.card__title')].some((h) => /SPIRE server control/.test(h.textContent) && h.offsetParent !== null)"):
+                raise RuntimeError("the SPIRE card is still visible (the take hides it)")
             show_slide(OPENING_SLIDE, extra=0.0, name="opening")
             page.evaluate("() => window.scrollTo(0, 0)")
 
             bubble("intro", "[data-testid=sim-banner]", sample_key="sample_intro", prefer="below")
             bubble("federation", "[data-testid=federation]", prefer="right")
-            show_slide(setup_slide, name="slide-setup")   # the live configuration, read from the console API (read-only) on the day
 
             # The public key list, in its own tab, as the gateway sees it.
             jp = ctx.new_page(); jp.goto(jwks_url); jp.wait_for_load_state("domcontentloaded"); jp.wait_for_timeout(600)
@@ -410,15 +448,19 @@ def main():
             bubble("jwks", "pre", pg=jp, prefer="below")
             jp.close(); page.bring_to_front(); page.wait_for_timeout(300)
 
+            # Fresh tokens now, so the decoded tokens on screen are well inside their lifetime when Present is pressed.
+            page.click("[data-testid=mint]"); page.wait_for_timeout(1200)
+            tok_ttl = check_tokens()
             tag_payload("token-valid", "cm-pay-valid")
-            bubble("valid", "#cm-pay-valid", prefer="right")
+            bubble("valid", "#cm-pay-valid", prefer="right", ttl=tok_ttl)
             tag_payload("token-mismatched", "cm-pay-mm")
             bubble("mismatched", "#cm-pay-mm", prefer="left")
             tag_payload("token-untrusted", "cm-pay-un")
             bubble("untrusted", "#cm-pay-un", prefer="left")
+            show_slide(setup_slide, name="slide-setup")   # the live configuration, read from the console API (read-only) on the day
 
             page.locator("[data-testid=present]").scroll_into_view_if_needed()
-            bubble("present", "[data-testid=present]", prefer="left", secs=4.0)
+            bubble("present", "[data-testid=present]", sample_key="sample_present", prefer="left")
             page.click("[data-testid=present]")
             page.wait_for_selector("[data-testid=results-table]", timeout=60000); page.wait_for_timeout(1000)
             rows = {}
@@ -430,17 +472,23 @@ def main():
             result["checks"].append(f"statuses {statuses}, all as designed: {as_designed}")
             m = re.search(r"returned (\d+) tool", rows["valid"]["words"])
             tools = m.group(1) if m else "?"
+            if not SAMPLE and not m: raise RuntimeError("valid row does not say how many tools came back: " + rows["valid"]["words"][:120])
             if statuses != [str(s) for s in EXPECT_STATUS] or not as_designed:
                 log("NOT AS DESIGNED: the take will not claim success", statuses); raise RuntimeError(f"gateway answers {statuses} are not 200/401/401")
             if not SAMPLE and not rows["valid"]["words"].lower().startswith("accepted"):
                 raise RuntimeError("valid row does not say accepted: " + rows["valid"]["words"])
-            refused_words = re.sub(r"\s*(REAL|MOCK)\s*$", "", rows["mismatched"]["words"]).strip().rstrip(".")
+            clean = lambda w: re.sub(r"\s*(REAL|MOCK)\s*$", "", w).strip().rstrip(".")
+            refused_words = clean(rows["mismatched"]["words"])
+            if not SAMPLE and (clean(rows["untrusted"]["words"]) != refused_words or len(refused_words) > 60):
+                raise RuntimeError("the two refused rows do not read the same, or are too long for a caption: %r vs %r" % (refused_words, clean(rows["untrusted"]["words"])))
             page.locator("table.results").scroll_into_view_if_needed()
             bubble("valid_result", "[data-testid=row-valid]", sample_key="sample_valid_result", prefer="below", status=statuses[0], tools=tools)
             bubble("refused", "table.results", sample_key="sample_refused", prefer="below", words=refused_words)
 
             # The request as sent: open the Valid exchange of the trace.
             first = page.locator("details.gw-ex").first
+            if not first.count() or "valid token" not in first.locator("summary").inner_text().lower():
+                raise RuntimeError("the first trace exchange is missing or is not the Valid token's")
             if first.count():
                 # All exchanges start open: keep the Valid one (first) open and fold the others so it is the one on screen.
                 page.evaluate("() => document.querySelectorAll('details.gw-ex').forEach((d, i) => { d.open = i === 0; })")
@@ -448,9 +496,7 @@ def main():
                 io = first.locator(".gw-io")
                 if io.count(): io.first.evaluate("e => { e.id = 'cm-io'; }")
                 bubble("trace", "#cm-io", sample_key="sample_trace", prefer="left")
-            else:
-                log("trace skipped: no gw-ex details")
-            if count["n"] != TOTAL: log("NOTE: %d caption bubbles were shown but the counter says %d; set TOTAL to match" % (count["n"], TOTAL))
+            if count["n"] != TOTAL: raise RuntimeError("%d caption bubbles were shown but the counter says %d" % (count["n"], TOTAL))
             page.evaluate("() => window.__cm.clear()")
             closing = dict(CLOSING_SLIDE)
             if SAMPLE:   # the sample never claims a live run
@@ -468,6 +514,11 @@ def main():
                 except Exception: pass
                 try: ff.wait(timeout=30)
                 except Exception: ff.kill()
+            if ff is not None and ok:   # the screen capture must still be running and have produced a real file
+                if ff.poll() is not None and ff.returncode not in (0, 255, -2): ok = False; result["error"] = "ffmpeg exited early: %s" % ff.returncode
+                vf = WORK / "take.mp4"
+                if not vf.exists() or vf.stat().st_size < 200_000: ok = False; result["error"] = "take.mp4 is missing or too small"
+                result["ok"] = ok
             (WORK / "result.json").write_text(json.dumps(result, indent=1))
             (WORK / "done.flag").write_text("done")
         vpath = page.video.path() if RECORD_PW and page.video else None
@@ -477,6 +528,7 @@ def main():
             subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(vpath), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out)], check=True)
             log("video:", out)
         print("ok" if ok else "FAILED: " + result.get("error", "?"))
+        sys.exit(0 if ok else 1)
 
 if __name__ == "__main__":
     main()
