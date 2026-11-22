@@ -488,7 +488,7 @@ def main():
 
             # The request as sent: open the Valid exchange of the trace.
             first = page.locator("details.gw-ex").first
-            if not first.count() or "valid token" not in first.locator("summary").inner_text().lower():
+            if not first.count() or "valid token" not in first.locator(":scope > summary").inner_text().lower():
                 raise RuntimeError("the first trace exchange is missing or is not the Valid token's")
             if first.count():
                 # All exchanges start open: keep the Valid one (first) open and fold the others so it is the one on screen.
