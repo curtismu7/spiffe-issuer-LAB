@@ -119,7 +119,7 @@ function walk(dir, out = []) {
 }
 
 test('no shipped text names a host other than .example, .invalid, loopback, or the public docs links', () => {
-  const allowed = new Set(['curtismu7.github.io', 'github.com', 'raw.githubusercontent.com', 'local.ping-devops.com', 'www.rfc-editor.org']);
+  const allowed = new Set(['curtismu7.github.io', 'github.com', 'raw.githubusercontent.com', 'local.ping-devops.com', 'www.rfc-editor.org', 'docs.pingidentity.com', 'modelcontextprotocol.io']);
   const hits = [];
   for (const f of walk('.')) {
     if (/\.(png|jpe?g|ico|woff2?)$/.test(f)) continue;
