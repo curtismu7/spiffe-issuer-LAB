@@ -10,7 +10,7 @@
   - Keep each bullet on its own line starting with "- ".
   - "---" on its own line separates one section from the next. Keep those.
   - No internal hostnames in this file (the repo is public). The page on screen shows the real hosts; internal viewers only.
-  - A slide is held at most 10 seconds (owner standard, 2026-11-22): keep slide text to about 60 words.
+  - A slide is held at most 10 seconds (owner standard, 2026-11-22): keep slide text to about 40 words (four words a second).
   - Say only what the run proved. The gateway gives no reason for a 401: say "the only difference", never "the cause".
 -->
 
@@ -20,20 +20,19 @@
 A short-lived signed token, not a stored secret
 
 ## Lead
-Two ways to let an agent through a gateway.
+Two ways through a gateway.
 
 ## Column A: A stored credential
 - A string the agent keeps
-- Whoever holds it is the agent
-- It works until revoked
+- Works until revoked
 
 ## Column B: A SPIFFE JWT-SVID (signed token)
-- A signed token naming the agent's SPIFFE ID
-- Short-lived, for one audience
+- A signed token naming its SPIFFE ID
+- Short-lived, one audience
 - Checked against a public key list
 
 ## Verdict
-This demo uses the signed token. The lab mints test tokens: it is not SPIRE.
+Demo uses the signed token. The lab mints test tokens: not SPIRE.
 
 ---
 
@@ -46,18 +45,16 @@ How Privilege is set up
 Read from Privilege on {date}; nothing changed.
 
 ## Column A: The Federated Identity
-- Issuer, with its key list fetched by URL
+- Issuer, key list fetched by URL
 - Subject: one SPIFFE ID (required claim)
-- Audience: the door URL; scope mcp
-- Lifetime capped at 300 seconds
+- Audience: the door; scope mcp
 
 ## Column B: The key and the grant
-- An agent key whose custodian is that identity
-- No API key, no secret
+- Agent key, custodian is that identity
 - A grant on one door
 
 ## Verdict
-Ping: a Federated Identity uses a signed token, not a stored credential.
+Signed token, not a stored credential.
 
 ---
 
@@ -67,21 +64,19 @@ Ping: a Federated Identity uses a signed token, not a stored credential.
 What this run just showed
 
 ## Lead
-One right token let in, two wrong ones refused.
+One token let in, two refused.
 
 ## Column A: What we did
-- Showed the public key list: one key
+- Public key list: one key
 - Minted three tokens
-- Presented each to the door
-- Got 200 and tools, then 401 and 401
+- Got 200, then 401 and 401
 
 ## Column B: Why it matters
-- No stored secret in the agent's setup
+- No stored secret
 - Two-minute token, one door
-- Each wrong token was refused
 
 ## Verdict
-Limit: this lab minted the tokens and attests no workload. Specs: SPIFFE JWT-SVID, RFC 7519, 7517, 6750, 9110.
+Limit: test tokens; no workload attested. Specs: SPIFFE JWT-SVID, RFC 7519, 7517, 6750, 9110.
 
 ---
 

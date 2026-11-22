@@ -14,7 +14,7 @@ Needs Docker (OrbStack), node, python3 with playwright and pillow, and ffmpeg. K
 
     # sample: Mock stand-in, headless, full timing, labelled SAMPLE (never a gateway answer)
     video/services.sh start                       # needs the lab image: docker compose build
-    SAMPLE=1 python3 video/take.py ../video-out/sample-work    # writes sample.mp4
+    SAMPLE=1 PROFILE=monitor python3 video/take.py ../video-out/sample-work    # writes sample-monitor.mp4; PROFILE=laptop writes sample-laptop.mp4
     video/services.sh stop
 
     # rehearsal: fast, no video; REHEARSE_SHOTS=dir keeps a still per caption and slide
@@ -23,6 +23,8 @@ Needs Docker (OrbStack), node, python3 with playwright and pillow, and ffmpeg. K
     # live take: the lab running in Real mode, then the real run
     PRIV_TENANT=<tenant> CONSOLE_API=<console origin> python3 video/take.py ../video-out/take-work
     HEADLESS_REAL=1 ...                           # the same take recorded headless (screen locked or off)
+    PROFILE=monitor|laptop                        # one cut per screen: monitor 1920x1080 (text L, slides x1.3), laptop 1800x1169 (text S); files take-<profile>.mp4
+                                                  # headless cuts trim the pre-roll so the video starts on the opening slide
 
 `PRIV_TENANT` and `CONSOLE_API` (the Privilege desktop app's local API origin) are not kept in this public repo. The real take uses them to read the Federated Identity, the agent key and the grant, **read-only**, and compares them with the running lab so the "How Privilege is set up" slide is true on the day.
 
