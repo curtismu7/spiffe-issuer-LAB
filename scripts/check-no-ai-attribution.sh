@@ -5,6 +5,9 @@
 # Prints counts and locations, never the matching text. Usage: scripts/check-no-ai-attribution.sh   (run from anywhere in the repo)
 set -u
 rule_date="2026-11-07"
+# Commits reviewed by the owner and known not to carry an AI credit (full SHAs only, one reason each).
+# 37ede68: GitHub's squash merge of #14 added a trailer naming the owner's own account (curtismu7), not an AI.
+allow="37ede6831df91ab541dcb461d56cce37d02b42f0"
 # bracketed first letters so this file does not match its own pattern
 pat='[G]enerated with \[?[C]laude Code|[C]o-[A]uthored-[B]y:'
 cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -17,6 +20,7 @@ if [ "$tree_count" != "0" ]; then printf '%s\n' "$tree" | sed 's/^/  /'; status=
 
 bad=0
 for h in $(git log --all --since="$rule_date" --format=%H 2>/dev/null); do
+  case " $allow " in *" $h "*) continue ;; esac
   if git log -1 --format=%B "$h" | grep -qiE "$pat"; then bad=$((bad+1)); echo "  commit ${h:0:7}"; fi
 done
 echo "commits since $rule_date with an AI-attribution credit: $bad"
