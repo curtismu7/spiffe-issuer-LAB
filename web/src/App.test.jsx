@@ -34,6 +34,7 @@ function stub(info, { present } = {}) {
     const json = (b, status = 200) => ({ ok: status < 400, status, json: async () => b });
     if (url === "/api/info") return json(info);
     if (url === "/api/shelf") return json({ shelfUrl: null });
+    if (url === "/api/run-observability") return json({ record: null, message: "No run yet." });
     if (url === "/api/mint") return json({ source: info.source, audience: info.config.audience, tokens: TOKENS });
     if (url === "/api/mode") return body.source === "real" && !info.realAvailable ? json({ error: "real_not_configured", message: info.realHint }, 409) : json({ source: body.source });
     if (url === "/api/present") return present ? present(body) : json({ source: info.source, audience: info.config.audience, tokens: TOKENS, rows: rows(info.source) });
@@ -449,5 +450,30 @@ describe("the SPIRE card: choose Docker or the cluster SPIRE", () => {
     expect(screen.getByTestId("spire-demo-svid-off")).toHaveTextContent(/not configured/);
     expect(screen.queryByTestId("spire-svid-get")).toBeNull();
     expect(calls.filter((c) => c.url === "/api/spire/demo-svid")).toHaveLength(0);
+  });
+});
+
+describe("the run record under the result (rule 27)", () => {
+  const reads = (calls) => calls.filter((c) => c.url === "/api/run-observability").length;
+
+  it("is read when the page loads and again after a present, and a present that answers without rows says it began no run", async () => {
+    const calls = stub(REAL_SETTINGS, { present: () => ({ ok: false, status: 409, json: async () => ({ error: "real_not_configured", message: "Real is not configured." }) }) });
+    render(<App />);
+    expect(await screen.findByTestId("run-record")).toBeInTheDocument();
+    await waitFor(() => expect(reads(calls)).toBe(1));
+    fireEvent.click(screen.getByTestId("present"));
+    expect(await screen.findByTestId("run-record-none")).toHaveTextContent(/began no run/);
+    expect(reads(calls)).toBe(1);
+  });
+
+  it("is read again after a present that finished, and on a mode switch, and the panel gets the page's mode", async () => {
+    const calls = stub(REAL_SETTINGS);
+    render(<App />);
+    await waitFor(() => expect(reads(calls)).toBe(1));
+    fireEvent.click(await screen.findByTestId("present"));
+    await waitFor(() => expect(reads(calls)).toBe(2));
+    fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "mock" } });
+    await waitFor(() => expect(screen.getByTestId("mode-badge")).toHaveTextContent("mock"));
+    await waitFor(() => expect(reads(calls)).toBe(3));
   });
 });
