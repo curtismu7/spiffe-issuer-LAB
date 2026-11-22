@@ -7,3 +7,6 @@ coverage/
 .DS_Store
 # the signing keys live here; never committed
 .data/
+# video recordings, stills and any console screenshots stay local (internal hostnames may be on screen)
+video/out/
+video/assets/
