@@ -2,7 +2,8 @@
 //
 //   1. createRunLog keeps the decisions of each "present" run (in memory) and writes each one as ONE timestamped stdout line: the
 //      workload's SPIFFE ID and the result, never a token. Each event is computed once and stamped once; the stdout line and the
-//      row in the record carry that same time. The time is when the lab computed it, not when the gateway wrote anything.
+//      row in the record carry that same time. The time is when the lab recorded the reply, after the whole present call finished (up to 15 s per token),
+//      not when the gateway answered or wrote anything.
 //   2. buildRunRecord hands the run's events to the shared collector. Mock: the rows are `simulated` (the lab's own verification
 //      of each token, applied to its published JWKS). Real: the rows are `response` (the reply the gateway sent). This lab reads no
 //      product log, so nothing is ever `logged`, and a layer with no event of its own is `not-logged` with the reason below.
@@ -56,27 +57,30 @@ export function createRunLog({ now = Date.now, write = () => {} } = {}) {
   // The newest CLOSED run made in this mode: a record never holds a half-open run and never one made in the other mode.
   const latest = (source) => runs.filter((r) => r.source === source && r.endedAt).at(-1) ?? null;
 
-  return { begin, record, end, latest, reset: () => { runs.length = 0; } };
+  return { begin, record, end, latest };
 }
 
 // ---- A reply or a verdict -> an event ----------------------------------------------------------------------------------------------
 // Is a gateway reply a success? Only HTTP 200 with a usable JSON-RPC result that is not a tool error. 401 and 403 are refusals; a
-// JSON-RPC `error` or `result.isError` in a 200 is a refusal; a body that was not parsed or has no result is not usable: `info`.
+// JSON-RPC `error` or `result.isError` in a 200 is a refusal; a body that was not parsed or has no result (missing or null) is not usable: `info`.
 export function replyOutcome(status, body) {
   if (status === 401 || status === 403) return 'refused';
   if (status !== 200) return 'info';
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'info';
   if (body.error !== undefined && body.error !== null) return 'refused';
-  if (body.result === undefined) return 'info';
+  if (body.result === undefined || body.result === null) return 'info';
   return body.result && body.result.isError === true ? 'refused' : 'allowed';
 }
 
 // One presented row (present.js: id, label, sub, status, words, expect, matched, source, trace) -> the decision the lab records for it.
 // Mock: the lab's own verification gave 200 or 401. Real: only what the gateway answered; no answer is `no-reply` and is never a row.
+// present.js takes `status` from the last POST that got any reply, so after a dropped or timed-out tools/list it is the 202 of the
+// initialized notification, not an answer to the call: an unreachable or timed-out call, or a call with no response captured, is no reply.
+const NO_ANSWER = new Set(['mcp_unreachable', 'mcp_timeout']);
 export function eventOf(row) {
   const base = { id: row.id, label: row.label, sub: row.sub, status: row.status, expect: row.expect, matched: row.matched };
   if (row.source === 'mock') return { ...base, outcome: row.status === 200 ? 'allowed' : 'refused', words: row.words };
-  if (typeof row.status !== 'number') return { ...base, outcome: 'info', result: 'no-reply', words: row.words };
+  if (typeof row.status !== 'number' || NO_ANSWER.has(row.error) || !row.trace?.response) return { ...base, status: null, outcome: 'info', result: 'no-reply', words: row.words };
   return { ...base, outcome: replyOutcome(row.status, row.trace?.response?.body), words: row.words };
 }
 
@@ -100,6 +104,7 @@ const REASONS = {
   resource: 'This lab calls no tool and runs no resource server: it asks the door for tools/list only.',
 };
 const NO_REPLY = 'No reply was received for this run: the gateway did not answer, or the call timed out.';
+const someSilent = (n, total) => `${n} of ${total} tokens got no answer from the gateway (it did not answer, or the call timed out): the rows below are only the ones that did.`;
 const PRODUCT = { mock: 'lab mock gateway (rehearsal)', real: 'gateway reply' };
 export const NO_RUN = {
   mock: 'No Mock run yet. Press "Rehearse against the mock gateway": the record of that run appears here.',
@@ -115,5 +120,9 @@ export async function buildRunRecord({ run, clock = Date.now }) {
   const layers = LAYERS.map((layer) => (layer === 'gateway'
     ? { layer, products: [], [source === 'mock' ? 'simulated' : 'responses']: rows, reason: NO_REPLY }
     : { layer, products: [], reason: REASONS[layer] }));
-  return createRunObservability({ clock }).collectRun({ runId: run.id, startedAt: run.startedAt, endedAt: run.endedAt, layers, source });
+  const record = await createRunObservability({ clock }).collectRun({ runId: run.id, startedAt: run.startedAt, endedAt: run.endedAt, layers, source });
+  // A token that got no answer has no row (that would invent a reply): say so on the layer, or the rows read like a complete run.
+  const silent = run.events.filter((e) => e.result === 'no-reply').length;
+  if (rows.length && silent) record.reasons.gateway = someSilent(silent, run.events.length);
+  return record;
 }

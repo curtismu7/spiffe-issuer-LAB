@@ -3,7 +3,7 @@ import RunObservability from "../run-observability/RunObservability.jsx";
 
 // Rule 27: the run's record under the lab's result, drawn by the shared panel. The server builds the record (GET /api/run-observability) in the
 // page's current mode; this asks again whenever a run finished or failed (`runKey`) or the mode changed, and says what the answer is.
-const LANE = "Agent gateway lane here: in Mock, the lab's own rehearsal gateway; in Real, the reply the lab received from the gateway you configured, not a gateway log line. The time on each row is when the lab computed the decision.";
+const LANE = "Agent gateway lane here: in Mock, the lab's own rehearsal gateway; in Real, the reply the lab received from the gateway you configured, not a gateway log line. The time on each row is when the lab recorded the reply, after the whole call finished. A 200 whose answer holds no tools/list result is information here, although the table above may word it as accepted.";
 const STREAMS = [{
   product: "This lab (server)",
   lives: "container stdout: one line per decision (the SPIFFE ID, the HTTP status, the result), never a token",

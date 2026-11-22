@@ -28,7 +28,8 @@ describe("RunRecord", () => {
     expect(await screen.findByTestId("ro-empty")).toBeInTheDocument();
     expect(screen.getByTestId("run-record-message")).toHaveTextContent("No Mock run yet.");
     expect(screen.getByTestId("run-lane-note")).toHaveTextContent(/not a gateway log line/);
-    expect(screen.getByTestId("run-lane-note")).toHaveTextContent(/when the lab computed the decision/);
+    expect(screen.getByTestId("run-lane-note")).toHaveTextContent(/when the lab recorded the reply, after the whole call finished/);
+    expect(screen.getByTestId("run-lane-note")).toHaveTextContent(/information here, although the table above may word it as accepted/);
   });
 
   it("asks nothing and draws nothing until the page knows its mode", () => {

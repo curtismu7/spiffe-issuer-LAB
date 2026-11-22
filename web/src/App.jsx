@@ -63,9 +63,10 @@ export default function App() {
       const r = await post("/api/present", { app: app ?? undefined });
       // A 502 still carries rows and a named message (the gateway could not be reached); a 409 carries what is missing.
       if (r.body.rows) { setRun(r.body); setTokens(r.body); }
-      setRunKey((k) => (r.body.rows ? (k ?? 0) + 1 : null));
+      // Only a refusal before any run (a 4xx without rows) began no run; anything else may have logged one, so read again.
+      setRunKey((k) => (!r.body.rows && r.status >= 400 && r.status < 500 ? null : (k ?? 0) + 1));
       if (!r.ok) setError(r.body.message || r.body.error || `HTTP ${r.status}`);
-    } catch (e) { setError(String(e.message || e)); setRunKey(null); } finally { setBusy(false); }
+    } catch (e) { setError(String(e.message || e)); setRunKey((k) => (k ?? 0) + 1); } finally { setBusy(false); }
   };
 
   if (!info) return error ? <p className="app-error">The lab could not start: {error}</p> : <p className="muted">Loading…</p>;

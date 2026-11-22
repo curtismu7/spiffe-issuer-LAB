@@ -466,6 +466,22 @@ describe("the run record under the result (rule 27)", () => {
     expect(reads(calls)).toBe(1);
   });
 
+  it("a present whose answer was lost (the fetch threw, or the body was not JSON) re-reads the record instead of claiming no run", async () => {
+    const calls = stub(REAL_SETTINGS, { present: () => { throw new Error("offline"); } });
+    render(<App />);
+    await waitFor(() => expect(reads(calls)).toBe(1));
+    fireEvent.click(await screen.findByTestId("present"));
+    await waitFor(() => expect(reads(calls)).toBe(2));
+    expect(screen.queryByTestId("run-record-none")).toBeNull();
+    cleanup();
+    const calls2 = stub(REAL_SETTINGS, { present: () => ({ ok: true, status: 200, json: async () => { throw new Error("not json"); } }) });
+    render(<App />);
+    await waitFor(() => expect(reads(calls2)).toBe(1));
+    fireEvent.click(await screen.findByTestId("present"));
+    await waitFor(() => expect(reads(calls2)).toBe(2));
+    expect(screen.queryByTestId("run-record-none")).toBeNull();
+  });
+
   it("is read again after a present that finished, and on a mode switch, and the panel gets the page's mode", async () => {
     const calls = stub(REAL_SETTINGS);
     render(<App />);

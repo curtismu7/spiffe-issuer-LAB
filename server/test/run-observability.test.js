@@ -41,6 +41,7 @@ async function startGateway(reply) {
         return res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', serverInfo: { name: 'g', version: '1' }, capabilities: {} } }));
       }
       const r = reply(msg, req);
+      if (r.drop) return req.socket.destroy(); // the connection is reset with no reply
       res.writeHead(r.status, { 'content-type': r.type ?? 'application/json' });
       res.end(typeof r.body === 'string' ? r.body : JSON.stringify({ jsonrpc: '2.0', id: msg.id, ...r.body }));
     });
@@ -170,6 +171,7 @@ test('what the gateway said decides the outcome: a 200 is allowed only with a us
     ['a usable result', { status: 200, body: { result: { tools: [{ name: 'whoami' }] } } }, 'allowed'],
     ['a JSON-RPC error in a 200', { status: 200, body: { error: { code: -32001, message: 'policy says no' } } }, 'refused'],
     ['a 200 with no result', { status: 200, body: {} }, 'info'],
+    ['a 200 with a null result', { status: 200, body: { result: null } }, 'info'],
     ['a 200 that is not JSON', { status: 200, type: 'text/plain', body: 'maintenance' }, 'info'],
     ['a 403', { status: 403, body: 'forbidden by policy' }, 'refused'],
     ['a wrong-audience 401', { status: 401, body: { error: 'unauthorized', message: 'audience mismatch' } }, 'refused'],
@@ -203,6 +205,40 @@ test('a gateway that cannot be reached: the layer is not-logged with the reason,
     assert.equal(lab.lines.length, 3);
     assert.ok(lab.lines.every((l) => LINE.test(l) && / status=none result=no-reply mode=real /.test(l)));
   } finally { await lab.close(); }
+});
+
+test('a call dropped after the handshake: the 202 of the notification is not a reply, so there is no row, no 202 anywhere, and the lines say no-reply with status none', async () => {
+  const gw = await startGateway(() => ({ drop: true }));
+  const lab = await start({ env: realEnv(gw.url) });
+  try {
+    const r = await lab.post('/api/present');
+    assert.equal(r.status, 502, 'the lab\'s own unreachable path fires');
+    assert.equal((await r.json()).error, 'gateway_unreachable');
+    const { record } = await lab.record();
+    assert.deepEqual(assertRunObservability(record), []);
+    assert.equal(record.coverage.gateway, 'not-logged');
+    assert.match(record.reasons.gateway, /No reply was received/);
+    assert.equal(gatewayRows(record).length, 0);
+    assert.ok(!/HTTP 202|"status":202/.test(JSON.stringify(record)) && !lab.lines.some((l) => /status=202/.test(l)), 'no 202 anywhere');
+    assert.ok(lab.lines.length === 3 && lab.lines.every((l) => LINE.test(l) && / status=none result=no-reply mode=real /.test(l)));
+  } finally { await lab.close(); await gw.close(); }
+});
+
+test('one token with no answer: its row is not invented, and the layer says that the rows are only the ones that did answer', async () => {
+  let calls = 0;
+  const gw = await startGateway(() => (++calls === 2 ? { drop: true } : { status: 200, body: { result: { tools: [{ name: 'whoami' }] } } }));
+  const lab = await start({ env: realEnv(gw.url) });
+  try {
+    assert.equal((await lab.post('/api/present')).status, 200);
+    const { record } = await lab.record();
+    assert.deepEqual(assertRunObservability(record), []);
+    assert.equal(record.coverage.gateway, 'response');
+    assert.equal(gatewayRows(record).length, 2);
+    assert.deepEqual(record.summary, { allowed: 2, refused: 0, blocked: 0, info: 0, unverified: 0 });
+    assert.equal(record.reasons.gateway, '1 of 3 tokens got no answer from the gateway (it did not answer, or the call timed out): the rows below are only the ones that did.');
+    assert.deepEqual(lab.lines.map((l) => /status=(\S+) result=(\S+)/.exec(l).slice(1).join(' ')), ['200 passed', 'none no-reply', '200 passed']);
+    assert.deepEqual(gatewayRows(record).map((r) => r.detail.case), ['valid', 'untrusted']);
+  } finally { await lab.close(); await gw.close(); }
 });
 
 test('a refused switch to Real (not configured) begins no run: it logs nothing and leaves the record alone', async () => {
@@ -292,8 +328,6 @@ test('events after a run is closed do not join it, the list is bounded per mode,
   assert.equal(log.latest('mock').id, closed.at(-1));
   log.begin('mock');
   assert.equal(log.latest('mock').id, closed.at(-1), 'a run that is still open never replaces the newest closed one');
-  log.reset();
-  assert.equal(log.latest('mock'), null);
 });
 
 test('replyOutcome and eventOf never turn information into a pass', () => {
@@ -301,6 +335,7 @@ test('replyOutcome and eventOf never turn information into a pass', () => {
   assert.equal(replyOutcome(200, { result: { isError: true } }), 'refused');
   assert.equal(replyOutcome(200, { error: { code: 1 } }), 'refused');
   assert.equal(replyOutcome(200, {}), 'info');
+  assert.equal(replyOutcome(200, { result: null }), 'info');
   assert.equal(replyOutcome(200, 'text'), 'info');
   assert.equal(replyOutcome(200, [1]), 'info');
   assert.equal(replyOutcome(200, null), 'info');
@@ -311,7 +346,12 @@ test('replyOutcome and eventOf never turn information into a pass', () => {
   const base = { id: 'valid', label: 'Valid', sub: SUB, expect: 200, matched: true, words: 'w' };
   assert.equal(eventOf({ ...base, source: 'real', status: 200, trace: { response: { body: { result: {} } } } }).outcome, 'allowed');
   assert.equal(eventOf({ ...base, source: 'real', status: 200, trace: { response: { body: 'x' } } }).outcome, 'info');
-  assert.equal(eventOf({ ...base, source: 'real', status: 200, trace: null }).outcome, 'info');
+  assert.equal(eventOf({ ...base, source: 'real', status: 200, trace: { response: { body: { result: null } } } }).outcome, 'info');
+  // no response captured for the call (the status is then another exchange's, such as the 202 of the notification): no reply, status none
+  for (const row of [{ status: 202, error: 'mcp_unreachable', trace: { response: null } }, { status: 202, error: 'mcp_timeout', trace: { response: { status: 202 } } }, { status: 202, trace: { response: null } }, { status: 200, trace: null }]) {
+    const e = eventOf({ ...base, source: 'real', ...row });
+    assert.deepEqual([e.result, e.status, e.outcome], ['no-reply', null, 'info'], JSON.stringify(row));
+  }
   assert.equal(eventOf({ ...base, source: 'real', status: null }).result, 'no-reply');
   assert.equal(eventOf({ ...base, source: 'mock', status: 401 }).outcome, 'refused');
   assert.equal(eventOf({ ...base, source: 'mock', status: 200 }).outcome, 'allowed');
