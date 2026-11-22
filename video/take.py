@@ -441,12 +441,13 @@ def main():
             bubble("federation", "[data-testid=federation]", prefer="right")
 
             # The public key list, in its own tab, as the gateway sees it.
-            jp = ctx.new_page(); jp.goto(jwks_url); jp.wait_for_load_state("domcontentloaded"); jp.wait_for_timeout(600)
+            # Same tab, so the one recording (Playwright records each tab as its own file) holds this scene too.
+            page.goto(jwks_url); page.wait_for_load_state("domcontentloaded"); page.wait_for_timeout(600)
             # Same JSON, indented and enlarged so it can be read on a recording (the browser's own viewer shows it on one line).
-            jp.evaluate("() => { const p = document.querySelector('pre'); if (p) { try { p.textContent = JSON.stringify(JSON.parse(p.textContent), null, 2); } catch (e) {} } document.body.style.zoom = '1.5'; }")
-            jp.wait_for_timeout(300)
-            bubble("jwks", "pre", pg=jp, prefer="below")
-            jp.close(); page.bring_to_front(); page.wait_for_timeout(300)
+            page.evaluate("() => { const p = document.querySelector('pre'); if (p) { try { p.textContent = JSON.stringify(JSON.parse(p.textContent), null, 2); } catch (e) {} } document.body.style.zoom = '1.5'; }")
+            page.wait_for_timeout(300)
+            bubble("jwks", "pre", prefer="below")
+            page.goto(base + "/"); page.wait_for_selector("[data-testid=token-valid]"); page.wait_for_timeout(800)
 
             # Fresh tokens now, so the decoded tokens on screen are well inside their lifetime when Present is pressed.
             page.click("[data-testid=mint]"); page.wait_for_timeout(1200)
