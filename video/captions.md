@@ -47,7 +47,7 @@ Read from Privilege on {date}; nothing changed.
 
 ## Column A: The Federated Identity
 - Issuer, with its key list fetched by URL
-- Subject: one SPIFFE ID
+- Subject: one SPIFFE ID (required claim)
 - Audience: the door URL; scope mcp
 - Lifetime capped at 300 seconds
 
