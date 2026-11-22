@@ -15,7 +15,7 @@ Simulated or not claimed:
 - **Not SPIRE.** The lab signs whatever SPIFFE ID it is configured with. No workload is attested, no trust bundle is rotated.
 - **Mock mode** (the default with no settings) rehearses against an in-process stand-in that applies the same checks to the published JWKS. Every Mock row says MOCK; it is never a Privilege result, and its error words are the lab's own.
 - **Verified once, by a real SPIRE and not by this lab:** on 2026-11-19 a JWT-SVID issued by a real SPIRE server (1.7.2 on Kubernetes) was presented as the bearer to a real Privilege gateway door. The registered SPIFFE ID got 200 with a tool list; another ID, a wrong audience, a tampered signature and no token each got 401. The Federated Identity was set to fetch SPIRE's keys by URL. So a gateway does accept a SPIFFE JWT-SVID presented directly.
-- **Still UNVERIFIED:** this lab's OWN tokens (RS256, `aud` as one string) have not been presented to a real gateway in a recorded run. `SPIFFE_AUD_ARRAY` and `SPIFFE_ALG=ES256` exist so the owner can match what SPIRE sends (an ES256 key, `aud` as an array) if the gateway answers otherwise.
+- **Verified with this lab's own tokens, once:** on 2026-11-22, in Real mode against a real Privilege gateway door, the lab's own tokens (RS256, `aud` as one string) got Valid 200 (the tool list came back), Mismatched 401 and Untrusted 401, as designed. It took a Federated Identity trusting the lab's public key list, an agent key behind it and a grant to the door. The gateway logs no per-call line for these tokens, so the reason for each 401 is inferred from the one thing that differs, not read from the gateway. `SPIFFE_AUD_ARRAY` and `SPIFFE_ALG=ES256` remain for matching what SPIRE sends (an ES256 key, `aud` as an array) if a gateway answers otherwise.
 - The three expected answers (200, 401, 401) are the lab's design. A row the gateway answers differently is shown as "not as designed", never hidden.
 
 The three tokens:
@@ -112,7 +112,7 @@ Then create an agent key whose custodian is the Federated Identity (leave the ke
 
 Put `PUBLIC_URL`, `SPIFFE_GW_URL` and `SPIFFE_GW_APPS` in `.env`, run `docker compose up -d`, check that `GET /api/info` reports `"source": "real"`, and click Present. Expected: Valid 200, Mismatched 401, Untrusted 401. If you change `PUBLIC_URL`, change Issuer and JwksURI in Privilege to match.
 
-The console menu path is Directory, Federated Identities, Register Identity (checked 2026-11-19). SPIFFE-direct-to-gateway acceptance was verified with a real SPIRE (see the top of this file); the lab's own tokens have not yet had their recorded real run.
+The console menu path is Directory, Federated Identities, Register Identity (checked 2026-11-19). SPIFFE-direct-to-gateway acceptance was verified with a real SPIRE (see the top of this file); the lab's own tokens were accepted and refused as designed in a real run on 2026-11-22 (see "Verified with this lab's own tokens" above).
 
 ## Run, test or set up a real SPIRE (the SPIRE card on the Settings page)
 
