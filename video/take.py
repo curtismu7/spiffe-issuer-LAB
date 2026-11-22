@@ -261,7 +261,12 @@ def console_check(info):
     def get(path):
         req = urllib.request.Request(base + path, headers={"x-procyon-session-id": str(uuid.uuid4()), "accept": "application/json"})
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, timeout=20, context=ctx) as r: return json.loads(r.read().decode())
+        for attempt in range(4):   # the Privilege desktop app's local API is sometimes slow to answer: retry, never relax the check
+            try:
+                with urllib.request.urlopen(req, timeout=25, context=ctx) as r: return json.loads(r.read().decode())
+            except Exception:
+                if attempt == 3: raise
+                time.sleep(4)
     try:
         nhi = get("nonhumanidentities/default/" + names["nhi"])["Spec"]; key = get("agentaccesskeys/default/" + names["key"])["Spec"]; grant = get("pacpolicys/default/" + names["grant"])
     except Exception as e:
