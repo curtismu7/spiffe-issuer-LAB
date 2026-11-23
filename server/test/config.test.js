@@ -18,6 +18,15 @@ test('defaults: reserved .example names, RS256, 120s, the placeholder issuer, Re
   assert.deepEqual(scanHosts(JSON.stringify({ ...c, audienceFor: undefined, appFor: undefined })), []);
 });
 
+test('SPIFFE_AUDIENCE accepts a URL or a Privilege-generated priv-nhi audience, and refuses anything else', () => {
+  const ok = (v) => readConfig(baseEnv({ SPIFFE_AUDIENCE: v })).problems.length === 0;
+  assert.ok(ok('https://gw.example/app/mcp'));
+  assert.ok(ok('priv-nhi-qxbvmjsjg7ubk7shrhvcd4woqnmsaiud'));
+  for (const bad of ['priv-nhi-', 'priv-nhi-Upper', 'priv-nhi-x y', 'nonsense', 'priv-nhi-x/../y']) {
+    assert.match(readConfig(baseEnv({ SPIFFE_AUDIENCE: bad })).problems.join(), /SPIFFE_AUDIENCE/, bad);
+  }
+});
+
 test('PUBLIC_URL and the gateway URL must be https origins (http only on loopback), no path, no credentials', () => {
   for (const ok of ['https://x.example', 'https://x.example/', 'http://127.0.0.1:9', 'http://localhost:9']) assert.ok(cleanOrigin(ok), ok);
   for (const bad of ['http://x.example', 'https://x.example/path', 'https://u:p@x.example', 'ftp://x.example', 'nonsense', 'https://x.example?q=1']) assert.equal(cleanOrigin(bad), null, bad);
