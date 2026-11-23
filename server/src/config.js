@@ -73,7 +73,8 @@ export function readConfig(env = process.env) {
   if (apps.some((a) => !APP.test(a))) bad('SPIFFE_GW_APPS must list door names (lowercase letters, digits, dashes), comma separated');
   const doorApps = apps.filter((a) => APP.test(a));
   const audienceOverride = pick('SPIFFE_AUDIENCE');
-  if (audienceOverride && !/^https?:\/\/\S+$/.test(audienceOverride)) bad('SPIFFE_AUDIENCE must be a URL');
+  // A URL, or the audience Privilege generates for a Federated Identity (priv-nhi-<random>).
+  if (audienceOverride && !/^https?:\/\/\S+$/.test(audienceOverride) && !/^priv-nhi-[a-z0-9-]+$/.test(audienceOverride)) bad('SPIFFE_AUDIENCE must be a URL or a priv-nhi-… audience');
 
   const missing = [
     !gw.SPIFFE_GW_URL && 'SPIFFE_GW_URL', !doorApps.length && 'SPIFFE_GW_APPS', !publicUrlSet && 'PUBLIC_URL',
