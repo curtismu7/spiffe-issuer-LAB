@@ -63,11 +63,11 @@ export async function presentReal({ doorUrl, origin, tokens }) {
 }
 
 // The rehearsal. The federation it applies (issuer, subject, audience) is the one the lab tells you to create; the words are the lab's own.
-export function presentMock({ doorUrl, store, cfg, tokens, now = Date.now() }) {
+export function presentMock({ doorUrl, audience = doorUrl, store, cfg, tokens, now = Date.now() }) {
   const door = new URL(doorUrl);
   const mockUrl = `https://gateway.invalid${door.pathname}`;
   return tokens.map((t) => {
-    const v = verify(t.token, { jwks: store.jwks(), issuer: cfg.issuer, audience: doorUrl, subject: cfg.validSub, now });
+    const v = verify(t.token, { jwks: store.jwks(), issuer: cfg.issuer, audience, subject: cfg.validSub, now });
     const status = v.ok ? 200 : 401;
     const body = v.ok
       ? { jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'mock_tool' }] } }

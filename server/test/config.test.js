@@ -27,6 +27,12 @@ test('SPIFFE_AUDIENCE accepts a URL or a Privilege-generated priv-nhi audience, 
   }
 });
 
+test('with a priv-nhi audience the door is still the gateway URL, and the audience is the override', () => {
+  const c = readConfig(baseEnv({ SPIFFE_GW_URL: 'https://gw.example', SPIFFE_GW_APPS: 'lab-agg-limited', SPIFFE_AUDIENCE: 'priv-nhi-abc123' }));
+  assert.equal(c.doorFor('lab-agg-limited'), 'https://gw.example/lab-agg-limited/mcp');
+  assert.equal(c.audienceFor('lab-agg-limited'), 'priv-nhi-abc123');
+});
+
 test('PUBLIC_URL and the gateway URL must be https origins (http only on loopback), no path, no credentials', () => {
   for (const ok of ['https://x.example', 'https://x.example/', 'http://127.0.0.1:9', 'http://localhost:9']) assert.ok(cleanOrigin(ok), ok);
   for (const bad of ['http://x.example', 'https://x.example/path', 'https://u:p@x.example', 'ftp://x.example', 'nonsense', 'https://x.example?q=1']) assert.equal(cleanOrigin(bad), null, bad);

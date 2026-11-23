@@ -157,15 +157,15 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
     res.set('Cache-Control', 'no-store');
     if (source === 'real' && !cfg.realAvailable) return res.status(409).json({ error: 'real_not_configured', message: cfg.realHint, missing: cfg.missing });
     const audience = cfg.audienceFor(door);
+    const doorUrl = cfg.doorFor(door);
     const tokens = mintAll({ ...cfg, audience }, store, now());
     const base = { source, audience, issuedAt: new Date(now()).toISOString(), tokens: tokens.map(tokenView) };
     if (source === 'mock') {
-      const doorUrl = audience;
-      const rows = presentMock({ doorUrl, store, cfg, tokens, now: now() });
+      const rows = presentMock({ doorUrl, audience, store, cfg, tokens, now: now() });
       logRun(rows);
       return res.json({ ...base, rows });
     }
-    const rows = await presentReal({ doorUrl: audience, origin: cfg.gatewayOrigin, tokens });
+    const rows = await presentReal({ doorUrl, origin: cfg.gatewayOrigin, tokens });
     logRun(rows);
     // Rule 23: a gateway that cannot be reached is a named JSON error, never a blank page or an empty 200.
     if (rows.every((r) => UNREACHABLE.has(r.error))) {
