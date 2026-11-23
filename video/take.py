@@ -112,21 +112,21 @@ OVERLAY = r"""
   .cm-bub .of{position:absolute;right:14px;top:10px;font-size:${px(12)};color:#5b667a}
   .cm-tail{position:absolute;width:22px;height:22px;background:#f7f8fc;border:3px solid #e3002b;transform:rotate(45deg)}
   .cm-pill{position:fixed;right:14px;bottom:12px;z-index:2147483646;background:#1d232b;color:#f2f4f7;border:1px solid #3a4350;border-radius:999px;padding:4px 14px;font:700 13px system-ui,sans-serif;pointer-events:none}
-  .cm-slide{box-sizing:border-box;position:fixed;z-index:2147483647;inset:0;display:flex;align-items:center;justify-content:center;background:#051727;font:17px/1.5 system-ui,sans-serif;padding:24px}
-  .cm-slide .card{zoom:${S};box-sizing:border-box;width:min(1100px,calc(94vw / ${S}));max-height:calc(92vh / ${S});overflow-y:auto;background:#0f2236;color:#f2f4f7;border:3px solid #e3002b;border-radius:24px;padding:32px 40px;box-shadow:0 24px 60px rgba(0,0,0,.6)}
-  .cm-slide h1{margin:0 0 10px;font-size:32px;font-weight:800;color:#fff}
-  .cm-slide .lead{margin:0 0 20px;color:#c7d0dc;font-size:19px}
+  .cm-slide{box-sizing:border-box;position:fixed;z-index:2147483647;inset:0;display:flex;align-items:center;justify-content:center;background:#e9eef5;font:17px/1.5 system-ui,sans-serif;padding:24px}
+  .cm-slide .card{zoom:${S};box-sizing:border-box;width:min(1100px,calc(94vw / ${S}));max-height:calc(92vh / ${S});overflow-y:auto;background:#fff;color:#14202e;border:3px solid #e3002b;border-radius:24px;padding:32px 40px;box-shadow:0 18px 44px rgba(20,32,46,.18)}
+  .cm-slide h1{margin:0 0 10px;font-size:32px;font-weight:800;color:#14202e}
+  .cm-slide .lead{margin:0 0 20px;color:#4a5a6c;font-size:19px}
   .cm-slide .cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
   @media (max-width:760px){ .cm-slide .cols{grid-template-columns:1fr} }
   .cm-slide .card.withimg{width:min(1400px,calc(98vw / ${S}))}
   .cm-slide .card.withimg h1{font-size:28px;margin-bottom:6px}.cm-slide .card.withimg .lead{margin-bottom:12px}
   .cm-slide .split{display:grid;grid-template-columns:1.25fr 1fr;gap:26px;align-items:start;margin-bottom:6px}
-  .cm-slide .split img{width:100%;border-radius:10px;border:1px solid #2a3b52;background:#fff}
-  .cm-slide .col h2{margin:0 0 8px;font-size:19px;color:#8fbcff}
-  .cm-slide .col.colb h2{color:#ffb4a8}
+  .cm-slide .split img{width:100%;border-radius:10px;border:1px solid #cfd8e3;background:#fff}
+  .cm-slide .col h2{margin:0 0 8px;font-size:19px;color:#1f5fbf}
+  .cm-slide .col.colb h2{color:#b3261e}
   .cm-slide .col ul{margin:0;padding-left:20px}
   .cm-slide .col li{margin:7px 0;font-size:18px}
-  .cm-slide .verdict{margin:22px 0 0;padding-top:16px;border-top:1px solid #2a3b52;font-weight:700;color:#fff;font-size:18px}
+  .cm-slide .verdict{margin:22px 0 0;padding-top:16px;border-top:1px solid #cfd8e3;font-weight:700;color:#14202e;font-size:18px}
   .reel-backdrop{justify-content:flex-start !important;padding-left:20px !important}
   .reel-dialog{width:min(${Math.round(880 * S)}px,100%) !important}`;
   const root = () => document.documentElement;
@@ -270,7 +270,10 @@ def console_check(info):
     b64 = lambda s: base64.b64encode(s.encode()).decode()
     cfg = info["config"]; notes = []; bad = []
     def get(path):
-        req = urllib.request.Request(base + path, headers={"x-procyon-session-id": str(uuid.uuid4()), "accept": "application/json"})
+        hdrs = {"x-procyon-session-id": str(uuid.uuid4()), "accept": "application/json"}
+        if os.environ.get("CONSOLE_API_KEY") and os.environ.get("CONSOLE_API_SECRET"):   # the desktop app's API key and secret, from a local file; never printed
+            hdrs.update({"x-api-key": os.environ["CONSOLE_API_KEY"], "x-api-secret": os.environ["CONSOLE_API_SECRET"]})
+        req = urllib.request.Request(base + path, headers=hdrs)
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         for attempt in range(4):   # the Privilege desktop app's local API is sometimes slow to answer: retry, never relax the check
             try:
@@ -289,7 +292,7 @@ def console_check(info):
     chk("identity issuer equals the lab's issuer", f.get("Issuer") == cfg["issuer"])
     chk("identity key list URL equals the lab's", f.get("JwksURI") == cfg["jwksUrl"])
     chk("identity audience equals the door URL", f.get("Audience") == cfg["audience"])
-    chk("identity pins the valid SPIFFE ID (required claim sub)", (f.get("RequiredClaims", {}).get("Map", {}) or {}).get("sub") == cfg["validSub"])
+    chk("identity pins the valid SPIFFE ID (Subject, or a required claim sub)", f.get("Subject") == cfg["validSub"] or (f.get("RequiredClaims", {}).get("Map", {}) or {}).get("sub") == cfg["validSub"])
     chk("identity max lifetime covers the token lifetime and is at most 300", cfg["ttlSeconds"] <= (f.get("MaxTokenLifetimeSec") or 3600) <= 300)
     chk("identity scope is mcp only", nhi.get("Scopes", {}).get("Elems") == ["mcp"])
     chk("identity not expired", (nhi.get("NotAfter") or "9999") > now)
@@ -500,9 +503,12 @@ def main():
             if not SAMPLE and not rows["valid"]["words"].lower().startswith("accepted"):
                 raise RuntimeError("valid row does not say accepted: " + rows["valid"]["words"])
             clean = lambda w: re.sub(r"\s*(REAL|MOCK)\s*$", "", w).strip().rstrip(".")
-            refused_words = clean(rows["mismatched"]["words"])
-            if not SAMPLE and (clean(rows["untrusted"]["words"]) != refused_words or len(refused_words) > 60):
-                raise RuntimeError("the two refused rows do not read the same, or are too long for a caption: %r vs %r" % (refused_words, clean(rows["untrusted"]["words"])))
+            # The gateway may answer the two wrong tokens differently. Each is quoted in its own words (the first clause only, the rest is headers and metadata).
+            short = lambda w: clean(w).split(" | ")[0].strip()
+            mis_words, untr_words = short(rows["mismatched"]["words"]), short(rows["untrusted"]["words"])
+            if not SAMPLE and (not mis_words or not untr_words or len(mis_words) > 60 or len(untr_words) > 60):
+                raise RuntimeError("a refused row is empty or too long for a caption: %r / %r" % (mis_words, untr_words))
+            refused_words = f'Mismatched: "{mis_words}". Untrusted: "{untr_words}"'
             page.locator("table.results").scroll_into_view_if_needed()
             bubble("valid_result", "[data-testid=row-valid]", sample_key="sample_valid_result", prefer="below", status=statuses[0], tools=tools)
             bubble("refused", "table.results", sample_key="sample_refused", prefer="below", words=refused_words)

@@ -11,7 +11,7 @@
   - "---" on its own line separates one section from the next. Keep those.
   - No internal hostnames in this file (the repo is public). The page on screen shows the real hosts; internal viewers only.
   - A slide is held at most 10 seconds (owner standard, 2026-11-22): keep slide text to about 40 words (four words a second).
-  - Say only what the run proved. The gateway gives no reason for a 401: say "the only difference", never "the cause".
+  - Say only what the run proved. The gateway gives no reason for a 401: say "it gives no reason", never "the cause", and do not claim the two refusals read the same (the mismatched one may differ).
 -->
 
 # Opening Slide
@@ -166,7 +166,7 @@ The gateway accepted the token and answered with its tool list ({tools} tools). 
 Both wrong tokens: HTTP 401
 
 ## Text
-Both are refused in the gateway's own words: "{words}". The gateway gives no reason; the only difference from the valid token is the subject, or the key. MCP requires a 401 for an invalid token.
+The gateway refused each in its own words: {words}. It gives no reason for either 401, so this run does not say why. Each token differs from the valid one: the subject, or the key. MCP requires a 401 for an invalid token.
 
 ---
 

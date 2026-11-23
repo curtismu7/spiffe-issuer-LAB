@@ -52,7 +52,7 @@ Slides are full screen and unnumbered; caption bubbles are numbered. Exact words
 | Slide | "How Privilege is set up" (after the three tokens) | The same values as read from Privilege on the day of the take: the identity, the key whose custodian is the identity, the grant on one door. Closes: a signed token, not a stored credential. | CONSOLE; PRIV |
 | 7 | Press "Present to the gateway" | Present mints fresh tokens with the same claims and sends each as `Authorization: Bearer` on an MCP request: initialize, then tools/list. | BEARER §2.1; MCP; SVID §5.2 |
 | 8 | Results: Valid | 200, and the gateway's tool list came back (4 tools). | LIVE |
-| 9 | Results table | 401 for both, in the gateway's own words ("Unauthorized"; the take requires both rows to read the same). The gateway names no reason; the only difference from Valid is the subject, or the key. MCP says an invalid token MUST get 401. | LIVE; MCP |
+| 9 | Results table | 401 for both, each in the gateway's own words (the take quotes each one; the Mismatched answer may read differently from Untrusted). The gateway names no reason for either; each token differs from Valid in the subject, or the key. MCP says an invalid token MUST get 401. | LIVE; MCP |
 | 10 | Request trace, the Valid exchange (the others folded) | The request as sent: the bearer header (the token is kept on the server, not shown) and the JSON-RPC call; the response. | LIVE; BEARER §2.1 |
 | Close | Slide | What the run showed: one right token let in, two wrong ones refused, a two-minute token for one door. Limit: this lab minted the tokens and attests no workload. | all |
 
