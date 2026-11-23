@@ -83,13 +83,14 @@ export function readConfig(env = process.env) {
   const realHint = realAvailable ? null
     : `Real is not configured. ${missing.length ? `Missing: ${missing.join(', ')}.` : problems.join('; ')} Set them in the lab's .env (see the README), then restart the lab. Mock still works.`;
 
-  const audienceFor = (app) => audienceOverride || (gatewayOrigin && app ? `${gatewayOrigin}/${app}/mcp` : PLACEHOLDER_AUDIENCE);
+  const doorFor = (app) => (gatewayOrigin && app ? `${gatewayOrigin}/${app}/mcp` : PLACEHOLDER_AUDIENCE);
+  const audienceFor = (app) => audienceOverride || doorFor(app);
   return {
     problems, missing, realAvailable, realHint, gatewayOrigin, apps: doorApps, publicUrlSet, audienceOverride,
     issuer, trustDomain, namespace, agent, otherAgent, alg, ttlSeconds, ttlClamped, untrustedMode, audArray,
     validSub: spiffeId(trustDomain, namespace, agent), mismatchedSub: spiffeId(trustDomain, namespace, otherAgent),
     jwksUrl: `${issuer}/.well-known/jwks.json`, discoveryUrl: `${issuer}/.well-known/openid-configuration`,
-    audienceFor,
+    audienceFor, doorFor,
     // The app the door call and the audience use: the asked-for one if it is configured, else the first.
     appFor: (asked) => (doorApps.includes(asked) ? asked : doorApps[0] || null),
   };
