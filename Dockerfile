@@ -16,6 +16,8 @@ COPY web/package.json web/
 COPY server/package.json server/
 RUN npm ci --omit=dev -w server && npm cache clean --force
 COPY server/src server/src
+# The Story/video wording file, served at GET /api/story and read by the recorded video. The rest of video/ stays out of the image.
+COPY video/captions.md video/captions.md
 COPY --from=build /app/web/dist web/dist
 # The signing keys are generated at first start and kept here (mode 600). A named volume mounted on /data inherits this ownership.
 ENV DATA_DIR=/data

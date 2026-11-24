@@ -16,6 +16,9 @@
 
 # Opening Slide
 
+## Header
+SPIFFE agent identity, against a real gateway
+
 ## Title
 A short-lived signed token, not a stored secret
 
@@ -247,3 +250,23 @@ Sample closing bullet
 
 ## Text
 Presented each to the mock stand-in, not a gateway
+
+---
+
+# Step: observability_panel
+
+## Title
+This run's record
+
+## Text
+The Run observability panel below the results is this lab's own record of the run: the decisions it made, in the page's current mode, one row per layer. In Mock the rows are the lab's rehearsal; in Real they are the lab's record of the gateway's reply, not a gateway log line.
+
+---
+
+# Step: sample_observability_panel
+
+## Title
+This run's record (mock)
+
+## Text
+The Run observability panel shows the mock rehearsal's record: what this lab's stand-in decided, row by row. In the real take these rows are the lab's record of the gateway's replies.

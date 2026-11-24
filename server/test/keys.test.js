@@ -55,5 +55,6 @@ for (const alg of ['RS256', 'ES256']) {
 
 test('no source file generates an EC key with crypto.generateKeyPair (family rule: createECDH)', () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src');
-  for (const f of fs.readdirSync(dir)) assert.doesNotMatch(fs.readFileSync(path.join(dir, f), 'utf8'), /generateKeyPair(Sync)?\(\s*['"]ec['"]/, f);
+  const files = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(d, e.name)) : [path.join(d, e.name)]));
+  for (const f of files(dir)) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /generateKeyPair(Sync)?\(\s*['"]ec['"]/, f);
 });

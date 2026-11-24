@@ -83,6 +83,10 @@ The header toggle switches at runtime (`POST /api/mode`, `GET /api/info` reports
 - **Mock**: no outbound call. "Rehearse against the mock gateway" mints fresh tokens and checks them against the published JWKS in-process. Rows are labelled MOCK.
 - **Real**: "Present to the gateway" mints fresh tokens and sends each as `Authorization: Bearer <jwt>` to the configured door, with `initialize` then `tools/list`, through the shared real-hop client. Only the one gateway origin is reachable (netguard), no redirects are followed, and the table shows the HTTP status and the gateway's own words per token. Real is the start mode whenever it is configured, so a rebuild never silently drops to Mock. Real not configured: the toggle's Real option is disabled and the page, and the server's 409, name exactly which settings are missing.
 
+## Story mode
+
+A **Demo | Story** toggle rides in the header (Demo is the default; the choice is remembered, and `?story=1` turns Story on for a visit). Story walks the live page with the same numbered bubbles and text slides the recorded video shows — the wording is one shared file, `video/captions.md`, served at `GET /api/story` — paced with Next/Back/Esc, plus an optional **Play for me** with slower/normal/faster and Pause. It runs in Mock (labelled simulated, with the `sample_*` wording) and in Real (live values: the status, the tool count, the refusals quoted in the gateway's own words, the request trace). Story is independent of Mock/Real and loads lazily, so Demo mode is unchanged with it off.
+
 ### Expose the JWKS (the owner's choice; the lab builds no deployment)
 
 The gateway fetches `<PUBLIC_URL>/.well-known/jwks.json` over public https, so that URL must reach this lab. The lab binds loopback only; choose one:
