@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import TopMenu from "./top-menu/TopMenu.jsx";
+import StoryToggle, { storyKey } from "./story/StoryToggle.jsx";
 import ShelfLink from "./components/ShelfLink.jsx";
 import Settings from "./components/Settings.jsx";
 import SpireCard from "./components/SpireCard.jsx";
@@ -7,6 +8,25 @@ import TokenCards from "./components/TokenCards.jsx";
 import Results from "./components/Results.jsx";
 import RunRecord from "./components/RunRecord.jsx";
 import HelpCard from "./components/HelpCard.jsx";
+
+// Story mode is loaded only when the viewer switches it on, so the page in Demo mode does not pay for it.
+const StoryRoot = lazy(() => import("./StoryRoot.jsx"));
+export const STORY_PREFIX = "spiffe";
+
+// If the Story chunk cannot load (the lab was rebuilt, a stale file name, the network) the shell bar must survive: Demo mode is never taken down by Story.
+class StoryBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="story-bar" role="alert" data-testid="story-error">
+        <span className="story-msg">Story could not load. Reload the page and try again.</span>
+        <button type="button" onClick={this.props.onExit}>Exit</button>
+      </div>
+    );
+  }
+}
 
 const REPO = "https://github.com/curtismu7/spiffe-issuer-LAB#readme";
 const PF_GUIDE = "https://github.com/curtismu7/spiffe-issuer-LAB/blob/main/docs/pf-setup-guide/pingfederate-spire-setup-guide.pdf";
@@ -26,6 +46,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem("theme") || "auto"; } catch { return "auto"; } });
+  const [storyOn, setStoryOn] = useState(false);
+  const [toggleKey, setToggleKey] = useState(0);
+  const writeStore = (key, value) => { try { localStorage.setItem(key, value); } catch { /* not remembered */ } };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
@@ -59,15 +82,29 @@ export default function App() {
 
   const present = async () => {
     setBusy(true); setError(null);
+    window.dispatchEvent(new CustomEvent("spiffe:run-start"));
     try {
       const r = await post("/api/present", { app: app ?? undefined });
       // A 502 still carries rows and a named message (the gateway could not be reached); a 409 carries what is missing.
       if (r.body.rows) { setRun(r.body); setTokens(r.body); }
+      // A present that the gateway refused (401 rows) or that could not reach the gateway (502 with rows) completed: the rows show it.
+      // Only a refusal before any run (a 4xx without rows) is a request-level failure: ok is false.
+      const requestFailed = !r.body.rows && r.status >= 400;
+      // run-end goes out AFTER the rows are on the page (the next frame): the Story steps that wait for the run read the rows as soon as it ends.
+      if (requestFailed) window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: false } }));
+      else requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: true } }))));
       // Only a refusal before any run (a 4xx without rows) began no run; anything else may have logged one, so read again.
       setRunKey((k) => (!r.body.rows && r.status >= 400 && r.status < 500 ? null : (k ?? 0) + 1));
       if (!r.ok) setError(r.body.message || r.body.error || `HTTP ${r.status}`);
-    } catch (e) { setError(String(e.message || e)); setRunKey((k) => (k ?? 0) + 1); } finally { setBusy(false); }
+    } catch (e) { setError(String(e.message || e)); window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: false } })); setRunKey((k) => (k ?? 0) + 1); } finally { setBusy(false); }
   };
+
+  // Exit in the Story bar: back to Demo, remembered, and ?story=1 dropped from the address so a reload stays in Demo.
+  const leaveStory = useCallback(() => {
+    writeStore(storyKey(STORY_PREFIX), "demo");
+    try { const u = new URL(window.location.href); if (u.searchParams.has("story")) { u.searchParams.delete("story"); window.history.replaceState(null, "", u); } } catch { /* no address to tidy */ }
+    setToggleKey((k) => k + 1);
+  }, []);
 
   if (!info) return error ? <p className="app-error">The lab could not start: {error}</p> : <p className="muted">Loading…</p>;
   const real = info.source === "real";
@@ -86,11 +123,19 @@ export default function App() {
           theme={{ value: theme, onChange: setTheme }}
           help={{ href: REPO }}
           version={info.version ? `v${info.version}` : undefined}
+          extra={<StoryToggle key={toggleKey} prefix={STORY_PREFIX} onChange={setStoryOn} />}
         >
           <a className="shelf-link" href={PF_GUIDE} target="_blank" rel="noreferrer" title="How to accept SPIRE JWT-SVIDs in your own PingFederate (PDF, three modes)">PF guide</a>
           <ShelfLink />
         </TopMenu>
       </header>
+      {storyOn ? (
+        <StoryBoundary onExit={leaveStory}>
+          <Suspense fallback={null}>
+            <StoryRoot mode={real ? "real" : "mock"} ready onExit={leaveStory} prefix={STORY_PREFIX} />
+          </Suspense>
+        </StoryBoundary>
+      ) : null}
       <main className="page">
         <p className="banner" role="note" data-testid="sim-banner" data-state={real ? "live" : undefined}>
           {real

@@ -17,6 +17,7 @@ import { createRunLog, buildRunRecord, eventOf, NO_RUN } from './runLog.js';
 import { createSpireControl, parseSpireSettings, TargetError, K8S_COMMANDS, COMMAND_SHOWN, CONTAINER_NAME, SPIRE_IMAGE, LOCAL_PORT } from './spireControl.js';
 import { buildGuide } from './spireGuide.js';
 import { parseDemoSvidSettings, fetchDemoSvid, verifyOffCluster } from './spireDemoSvid.js';
+import { storyResponse } from './storyRoute.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -172,6 +173,13 @@ export function createApp({ store, env = process.env, now = Date.now, health = c
       return res.status(502).json({ ...base, rows, error: 'gateway_unreachable', message: `The gateway could not be reached: ${rows[0].words}` });
     }
     return res.json({ ...base, rows });
+  });
+
+  // Story mode wording: the file the recorded video and the live Story both read. cache-control no-cache: an edit shows on the next request.
+  api.get('/story', (_req, res) => {
+    const { status, body } = storyResponse();
+    res.set('Cache-Control', 'no-cache');
+    return res.status(status).json(body);
   });
 
   // The record of the newest run made in the current mode (null with a message when there is none). Rule 23: a failure is {error, message} JSON.
