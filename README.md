@@ -54,7 +54,7 @@ Real needs all three of these:
 
 - `PUBLIC_URL` - the public https origin where this lab's `/.well-known/` is reachable by the gateway. The issuer string in every token is exactly this origin.
 - `SPIFFE_GW_URL` - the Privilege gateway origin (https; http only on loopback).
-- `SPIFFE_GW_APPS` - comma-separated MCP door names. The door is `<SPIFFE_GW_URL>/<app>/mcp` and is also the token audience.
+- `SPIFFE_GW_APPS` - comma-separated MCP door names. The door is `<SPIFFE_GW_URL>/<app>/mcp`, which the lab calls. The token audience is the door unless `SPIFFE_AUDIENCE` overrides it.
 
 Optional:
 
@@ -101,7 +101,7 @@ In Privilege a Federated Identity is the console object `NonHumanIdentity` (`/v1
 | Field | Value |
 |---|---|
 | Issuer | `PUBLIC_URL` |
-| Audience | the door URL, `<SPIFFE_GW_URL>/<app>/mcp` |
+| Audience | the door URL, `<SPIFFE_GW_URL>/<app>/mcp`, unless the console generates one (`priv-nhi-…`); then set `SPIFFE_AUDIENCE` to that value |
 | Subject | `spiffe://<trust-domain>/ns/<ns>/sa/<agent>` (leave "allow any subject" off) |
 | JwksURI | `<PUBLIC_URL>/.well-known/jwks.json` |
 | MaxTokenLifetimeSec | 300 (at least the lab's token lifetime) |
@@ -210,7 +210,7 @@ Node 26: server 88 pass, web 76 pass, repo checks 16 pass (before the run observ
 ## Troubleshooting
 
 - **"Real is not configured. Missing: ..."**: set the named keys in `.env` and restart the lab (`docker compose up -d`).
-- **The gateway answers 401 to the Valid token**: read the gateway log line `workload token rejected: <reason>`. Typical: Issuer differs from `PUBLIC_URL` (character for character), Audience is not the door URL, Subject differs, the gateway cannot fetch the JWKS (test the public URL from outside), or the identity has no agent key behind it yet. If the reason is about the algorithm or `aud` shape, try `SPIFFE_ALG=ES256` or `SPIFFE_AUD_ARRAY=1`.
+- **The gateway answers 401 to the Valid token**: read the gateway log line `workload token rejected: <reason>`. Typical: Issuer differs from `PUBLIC_URL` (character for character), Audience is not the door URL or the `SPIFFE_AUDIENCE` override (the `priv-nhi-…` value Privilege generated), Subject differs, the gateway cannot fetch the JWKS (test the public URL from outside), or the identity has no agent key behind it yet. If the reason is about the algorithm or `aud` shape, try `SPIFFE_ALG=ES256` or `SPIFFE_AUD_ARRAY=1`.
 - **The gateway cannot fetch the JWKS**: the tunnel must forward `Host` unchanged or any `Host`; the two `/.well-known/` paths answer for any Host. A path-restricted route must include both.
 - **Tokens expire before I present them**: they last 120 seconds by default; "Present" always mints fresh ones. Raise `SPIFFE_TTL_SECONDS` (max 300) only if the identity's MaxTokenLifetimeSec allows it.
 - **Port problems**: see "Ports, and what to do if the port is taken".
