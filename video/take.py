@@ -189,6 +189,16 @@ def console_check(info):
     chk("grant is current", (grant.get("NotAfter") or "9999") > now)
     return (not bad), notes + bad, time.strftime("%Y-%m-%d")
 
+# This lab's on-page glue, run with the shared overlay (the old OVERLAY's interval): hide the SPIRE card,
+# blur the token and signature rows. Nothing here is a copy of shared code.
+GLUE = r"""
+setInterval(() => {
+  document.querySelectorAll('h2.card__title').forEach((h) => { if (/SPIRE server control/.test(h.textContent)) { const c = h.closest('.card') || h.closest('section'); if (c) c.style.display = 'none'; } });
+  document.querySelectorAll('.jform__v--token, .jwt').forEach((e) => { e.style.filter = 'blur(7px)'; });
+  document.querySelectorAll('.jdec__h').forEach((h) => { if (/signature/i.test(h.textContent) && h.nextElementSibling) h.nextElementSibling.style.filter = 'blur(7px)'; });
+}, 250);
+"""
+
 def main():
     global OPENING_SLIDE, CLOSING_SLIDE, STEPS, SLIDES
     WORK.mkdir(parents=True, exist_ok=True)
@@ -229,6 +239,7 @@ def main():
         ctx.add_init_script("window.__pillText = " + json.dumps("SAMPLE: mock stand-in, not a live run" if SAMPLE else "REAL RUN: real gateway, test tokens") + ";")
         ctx.add_init_script("try { localStorage.setItem('theme', %s); } catch (e) {}" % json.dumps(THEME))
         ctx.add_init_script(overlay_script())
+        ctx.add_init_script(GLUE)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(base + "/"); page.wait_for_selector("[data-testid=mode-badge]"); page.wait_for_selector("[data-testid=token-valid]")
         if not HEADLESS:
