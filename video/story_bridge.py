@@ -21,7 +21,8 @@ def classic(name):
         raise ValueError(f"{name}: not a plain module any more (an import or a non-trivial export): extend story_bridge.classic before using it")
     return out
 
-# take.py's own additions around the shared overlay: the SAMPLE pill and nothing else (this lab has no reel pop-out and no row to hide).
+# take.py's own additions around the shared overlay: the SAMPLE pill, the reel pop-out pushed to the left edge (so the caption bubble sits beside it) and widened at the
+# large scale, and the hidden protocolVersion row.
 GUARD = "  if (window.__cm) return;"   # a second injection in one page does nothing
 
 GLUE_BODY = r"""
@@ -31,13 +32,17 @@ GLUE_BODY = r"""
   window.__storyHold = { bubbleHold: bubbleHold, slideHold: slideHold };
   // Stacking as before: caption bubble < the SAMPLE pill < a slide (the shared overlay's slide is one above its bubble, so the slide is raised one more).
   const css = `.story-slide{z-index:${OVERLAY_Z + 7} !important}
-  .cm-pill{position:fixed;right:14px;bottom:12px;z-index:${OVERLAY_Z + 6};background:#1d232b;color:#f2f4f7;border:1px solid #3a4350;border-radius:999px;padding:4px 14px;font:700 13px system-ui,sans-serif;pointer-events:none}`;
+  .cm-pill{position:fixed;right:14px;bottom:12px;z-index:${OVERLAY_Z + 6};background:#1d232b;color:#f2f4f7;border:1px solid #3a4350;border-radius:999px;padding:4px 14px;font:700 13px system-ui,sans-serif;pointer-events:none}
+  .reel-backdrop{justify-content:flex-start !important;padding-left:20px !important}
+  .reel-dialog{width:min(${Math.round(880 * S)}px,100%) !important}`;
   const ensure = () => {
     if (!document.documentElement || document.getElementById('cm-style')) return;
     const st = document.createElement('style'); st.id = 'cm-style'; st.textContent = css; document.documentElement.appendChild(st);
     const pill = document.createElement('div'); pill.className = 'cm-pill'; pill.textContent = window.__pillText || ''; if (!window.__pillText) pill.style.display = 'none'; document.documentElement.appendChild(pill);
   };
   document.addEventListener('DOMContentLoaded', ensure); ensure();
+  setInterval(() => { document.querySelectorAll('.aws__card dt').forEach((dt) => { if (dt.textContent === 'protocolVersion') { dt.style.display = 'none'; if (dt.nextElementSibling) dt.nextElementSibling.style.display = 'none'; } }); }, 250);
+  window.__authUrl = null;
 """
 
 def overlay_script():

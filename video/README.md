@@ -4,6 +4,8 @@ A silent screen recording of this lab: the public key list, the three test token
 
 Order of work: `SCRIPT.md` (sources first, with the corrections from an independent re-read and a separate review) -> `captions.md` (wording) -> **sample** -> owner review -> live take.
 
+Latest release: [spiffe-issuer-lab-video-2026-11-25](https://github.com/curtismu7/spiffe-issuer-LAB/releases/tag/spiffe-issuer-lab-video-2026-11-25) — two cuts (monitor 1920x1080, laptop 1800x1168), 2:33 each, with real values masked on screen.
+
 - `SCRIPT.md`: audience, the one idea, the sources table, the scene table, the checks before recording, what is deliberately not in the video.
 - `captions.md`: every word on screen. `captions.py` loads it for `take.py`. Edit the wording there, not in the code.
 - `take.py`: the recorder. `services.sh`: a private Mock instance of the lab (port 17839) for the sample.
