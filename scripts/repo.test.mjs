@@ -111,7 +111,9 @@ test('the shared real-hop client is vendored unchanged', () => {
 // ---- Hygiene ----------------------------------------------------------------------------------------------------------
 function walk(dir, out = []) {
   for (const name of fs.readdirSync(path.join(root, dir))) {
-    if (['node_modules', 'dist', '.git', '.data', 'package-lock.json', 'repo.test.mjs', '.env'].includes(name)) continue;
+    // test_onscreen_mask.py is a mask-engine fixture: it deliberately uses non-reserved fictional hosts (bbc.co.uk,
+    // execute-api URLs, IPs) to exercise the allow=False masking path. Nothing there ships or connects.
+    if (['node_modules', 'dist', '.git', '.data', 'package-lock.json', 'repo.test.mjs', '.env', 'test_onscreen_mask.py'].includes(name)) continue;
     const rel = path.join(dir, name);
     if (fs.statSync(path.join(root, rel)).isDirectory()) walk(rel, out); else out.push(rel);
   }
