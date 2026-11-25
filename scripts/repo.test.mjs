@@ -124,7 +124,7 @@ test('no shipped text names a host other than .example, .invalid, loopback, or t
   const allowed = new Set(['curtismu7.github.io', 'github.com', 'raw.githubusercontent.com', 'local.ping-devops.com', 'www.rfc-editor.org', 'docs.pingidentity.com', 'modelcontextprotocol.io']);
   const hits = [];
   for (const f of walk('.')) {
-    if (/\.(png|jpe?g|ico|woff2?)$/.test(f)) continue;
+    if (/\.(png|jpe?g|ico|woff2?)$/.test(f) || /\.mp4$/.test(f)) continue;   // binary media: the masked release videos in video/releases/
     // the vendored shared files carry the family's own documentation links; they are checked by their pins, not here
     if (/(^|\/)(standalone-ui\.css|JsonPane\.(jsx|css)|TopMenu\.jsx|top-menu\.css|GatewayTrace\.jsx|gateway-trace\.(css|test\.jsx)|ReleaseNotes\.jsx|gatewayReal\.js|gatewayTrace\.js|demo-kit-conformance\.mjs)$/.test(f)) continue;
     for (const h of scanHosts(read(f))) if (!allowed.has(h) && !/(^|\.)ping-devops\.com$/.test(h)) hits.push(`${f}: ${h}`);
