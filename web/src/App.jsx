@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
 import TopMenu from "./top-menu/TopMenu.jsx";
 import StoryToggle, { storyKey } from "./story/StoryToggle.jsx";
 import ShelfLink from "./components/ShelfLink.jsx";
@@ -39,6 +39,7 @@ const post = async (url, payload) => {
 
 export default function App() {
   const [info, setInfo] = useState(null);
+  const runEndRaf = useRef(null); // the pending run-end rAF (the inner frame of the two): cancelled on unmount, so a gone page dispatches nothing
   const [app, setApp] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [run, setRun] = useState(null);
@@ -71,6 +72,7 @@ export default function App() {
     } catch (e) { setError(String(e.message || e)); }
   }, [mint]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => () => { if (runEndRaf.current != null) cancelAnimationFrame(runEndRaf.current); }, []); // a page taken down stops its pending run-end
 
   const setMode = async (source) => {
     const r = await post("/api/mode", { source });
@@ -92,7 +94,7 @@ export default function App() {
       const requestFailed = !r.body.rows && r.status >= 400;
       // run-end goes out AFTER the rows are on the page (the next frame): the Story steps that wait for the run read the rows as soon as it ends.
       if (requestFailed) window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: false } }));
-      else requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: true } }))));
+      else runEndRaf.current = requestAnimationFrame(() => { runEndRaf.current = requestAnimationFrame(() => { runEndRaf.current = null; window.dispatchEvent(new CustomEvent("spiffe:run-end", { detail: { ok: true } })); }); });
       // Only a refusal before any run (a 4xx without rows) began no run; anything else may have logged one, so read again.
       setRunKey((k) => (!r.body.rows && r.status >= 400 && r.status < 500 ? null : (k ?? 0) + 1));
       if (!r.ok) setError(r.body.message || r.body.error || `HTTP ${r.status}`);

@@ -493,3 +493,62 @@ describe("the run record under the result (rule 27)", () => {
     await waitFor(() => expect(reads(calls)).toBe(3));
   });
 });
+
+describe("the Story run events (the contract storyWiring waits on)", () => {
+  const listen = () => {
+    const seen = [];
+    const on = (e) => seen.push([e.type, e.detail?.ok ?? null]);
+    window.addEventListener("spiffe:run-start", on);
+    window.addEventListener("spiffe:run-end", on);
+    return { seen, off: () => { window.removeEventListener("spiffe:run-start", on); window.removeEventListener("spiffe:run-end", on); } };
+  };
+  // A late double-rAF from an EARLIER test's present() (jsdom keeps its rAF queue across cleanup) can land in
+  // this test's listener. Judge only the events this test's own present() produced: the LAST start's run-end.
+  const thisRun = (seen) => {
+    const lastStart = seen.map((s) => s[0]).lastIndexOf("spiffe:run-start");
+    return seen.filter((_, i) => i >= lastStart);
+  };
+
+  it("a completed run (200) fires run-start then run-end ok:true after the rows are on the page", async () => {
+    stub(NO_SETTINGS);
+    const ev = listen();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("present"));
+    await screen.findByTestId("results-table");
+    await waitFor(() => expect(thisRun(ev.seen)).toEqual([["spiffe:run-start", null], ["spiffe:run-end", true]]));
+    await new Promise((r) => setTimeout(r, 300)); // jsdom flushes rAF on real timers: a late frame from an earlier test must not add an event to THIS run's tail
+    expect(thisRun(ev.seen)).toEqual([["spiffe:run-start", null], ["spiffe:run-end", true]]);
+    ev.off();
+  });
+
+  it("a gateway refusal WITH rows (401s) still completed: run-end ok:true", async () => {
+    const refused = rows("mock", [401, 401, 401]);
+    stub(NO_SETTINGS, { present: () => ({ ok: false, status: 401, json: async () => ({ error: "refused", message: "the gateway refused", rows: refused, tokens: TOKENS }) }) });
+    const ev = listen();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("present"));
+    await screen.findByTestId("results-table");
+    await waitFor(() => expect(thisRun(ev.seen)).toEqual([["spiffe:run-start", null], ["spiffe:run-end", true]]));
+    ev.off();
+  });
+
+  it("a refusal WITHOUT rows (409, Real not configured) is a request-level failure: run-end ok:false", async () => {
+    stub(NO_SETTINGS, { present: () => ({ ok: false, status: 409, json: async () => ({ error: "not_configured", message: "nothing to present" }) }) });
+    const ev = listen();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("present"));
+    await screen.findByTestId("error");
+    await waitFor(() => expect(thisRun(ev.seen)).toEqual([["spiffe:run-start", null], ["spiffe:run-end", false]]));
+    ev.off();
+  });
+
+  it("a thrown request (the catch branch) also ends the run: ok:false, never a hang", async () => {
+    stub(NO_SETTINGS, { present: () => { throw new Error("boom"); } });
+    const ev = listen();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("present"));
+    await screen.findByTestId("error");
+    await waitFor(() => expect(thisRun(ev.seen)).toEqual([["spiffe:run-start", null], ["spiffe:run-end", false]]));
+    ev.off();
+  });
+});
