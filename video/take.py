@@ -16,6 +16,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import base64
 import captions
+import onscreen_mask
 from story_bridge import overlay_script, slide_payload as _slide_payload, hold_bubble, hold_slide as _hold_slide
 OPENING_SLIDE = CLOSING_SLIDE = STEPS = SLIDES = None   # filled in main() from the lab's /api/story (the one shared parser)
 
@@ -104,9 +105,30 @@ EXPECT_STATUS = [200, 401, 401]   # valid, mismatched, untrusted: the lab's desi
 
 ASSETS = Path(__file__).parent / "assets"
 
-def slide_payload(cfg):
-    """captions.py's flat slide -> the shared overlay's shape (story_bridge.slide_payload). Edit captions.md, not this."""
+ASSETS = Path(__file__).resolve().parent / "assets"
+PUBLIC_IMAGES = None   # {captured name: redacted name}, checked by OCR in main() before the browser opens (onscreen_mask.public_image); this lab's slides are text-only today
+
+def public_images(slides, rules, assets=ASSETS):
+    """Every image any slide of this take can show (opening, closing and the rest), mapped to its OCR-checked redacted copy. Refuses before recording."""
+    return {s["image"]: onscreen_mask.public_image(s["image"], assets, rules) for s in slides if s and s.get("image")}
+
+def clip_window(first, last, delay=0.05, tail=0.8):
+    """Where to cut the recorded video (seconds from the start of the page's own recording): from just after the first slide is drawn, so the first page
+    of the video is the title (owner rule 29), to just after the closing slide has been held, when there is one. A take with no slide is left whole.
+    Returns {'start': s, 'end': s or None}."""
+    if first is None: return {"start": 0.0, "end": None}
+    start = first + delay   # the slide is painted within a frame of being drawn: the video never shows the page underneath
+    return {"start": round(start, 2), "end": round(last + tail, 2) if last is not None else None}
+
+def page_slide(cfg):
+    """captions.py's flat slide -> the shared overlay's shape (story_bridge.slide_payload). Images come from the local, gitignored assets folder. Edit captions.md, not this.
+    A masked take shows only the redacted copy that main() checked; an image it did not check is never shown."""
+    if cfg.get("image") and PUBLIC_IMAGES is not None:
+        cfg = {**cfg, "image": PUBLIC_IMAGES.get(cfg["image"])}   # None (no image) if somehow unchecked: fail safe, without stopping the recorder
     return _slide_payload(cfg, ASSETS)
+
+slide_payload = page_slide   # the wiring test's name for it (A2A take's shape)
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 def fill(text, **vals):
     for k, v in vals.items():
@@ -200,12 +222,22 @@ setInterval(() => {
 """
 
 def main():
-    global OPENING_SLIDE, CLOSING_SLIDE, STEPS, SLIDES
+    global OPENING_SLIDE, CLOSING_SLIDE, STEPS, SLIDES, MASK_SCRIPT, PUBLIC_IMAGES
     WORK.mkdir(parents=True, exist_ok=True)
     try:   # the wording, from the lab's /api/story (the one shared parser), checked to be this checkout's captions.md
         OPENING_SLIDE, CLOSING_SLIDE, STEPS, SLIDES = captions.load(APP, Path(__file__).parent / "captions.md")
     except ValueError as e:
         log("cannot read the wording:", e); raise SystemExit(f"take.py: {e}")
+    # Every take is masked (the sample too): the rules are built at record time from the lab's own .env, never written to the repo.
+    env_file = Path(os.environ.get("MASK_ENV", str(Path.home() / "Development/AI-DEMO-Standalone/standalone/spiffe-issuer-LAB/.env")))
+    try:
+        rules = onscreen_mask.mask_rules(env_file)
+    except (OSError, onscreen_mask.MaskConfigError) as e:
+        log("no on-screen masks: refusing the take"); raise SystemExit(f"take.py: cannot build the on-screen masks from {env_file} ({type(e).__name__}): a public video must not show real hosts; set MASK_ENV to the lab's .env")
+    MASK_SCRIPT = onscreen_mask.mask_script(rules)
+    log("on-screen masks:", len(rules["pairs"]), "rules,", len(rules["detect"]), "leak detectors")
+    PUBLIC_IMAGES = public_images([OPENING_SLIDE, CLOSING_SLIDE, *SLIDES.values()], rules)
+    log("slide images: redacted copies checked by OCR:", len(PUBLIC_IMAGES))
     profile = tempfile.mkdtemp(prefix="spiffe-take-")
     # No "Save password?" bubble in the recording: switch the password manager off in this throw-away profile.
     (Path(profile) / "Default").mkdir(parents=True, exist_ok=True)
@@ -234,7 +266,8 @@ def main():
             **({"device_scale_factor": _prof["dsf"]} if HEADLESS else {}),   # the laptop is a retina display: render at 2x, record at 2400 px wide
             **({"record_video_dir": str(WORK / "pw-video"), "record_video_size": {"width": _prof["video"][0], "height": _prof["video"][1]}} if RECORD_PW else {}),
             args=[f"--window-position={WIN_X},{WIN_Y}", f"--window-size={WIN_W},{WIN_H}", "--no-first-run", "--no-default-browser-check", *([] if HEADLESS else ["--kiosk"])])
-        T0 = time.monotonic()   # the Playwright video starts with the page: everything before the opening slide is trimmed off
+        T0 = clock0 = time.monotonic()   # the Playwright video starts with the page: everything before the opening slide is trimmed off
+        ctx.add_init_script(MASK_SCRIPT)   # first: a real value is rewritten before anything is drawn
         ctx.add_init_script("window.__cmScale = " + json.dumps(SCALE) + "; window.__cmRoot = " + json.dumps(ROOT_PX) + ";")
         ctx.add_init_script("window.__pillText = " + json.dumps("SAMPLE: mock stand-in, not a live run" if SAMPLE else "REAL RUN: real gateway, test tokens") + ";")
         ctx.add_init_script("try { localStorage.setItem('theme', %s); } catch (e) {}" % json.dumps(THEME))
@@ -300,12 +333,17 @@ def main():
             pg.wait_for_timeout(int((secs if secs is not None else hold_bubble(pg, text, lines)) * 1000 * slow))
             pg.evaluate("() => window.__cm.clear()")
 
-        T = {}
-        def show_slide(cfg, extra=0.0, name="slide"):
-            page.evaluate("o => window.__cm.slide(o)", slide_payload(cfg))
+        T = {}; clip = {"first": None, "last": None}
+        def show_slide(cfg, name="slide"):
+            payload = page_slide(cfg)
+            page.evaluate("o => window.__cm.slide(o)", payload)
+            if clip["first"] is None: clip["first"] = time.monotonic() - clock0
             if name == "opening": T["open"] = time.monotonic()
             snap(name)
-            page.wait_for_timeout(int(_hold_slide(page, slide_payload(cfg)) * 1000 * slow))
+            # The hold is the shared formula, evaluated in the page (the owner's 10-second slide cap is in it).
+            secs_eff = _hold_slide(page, payload)
+            page.wait_for_timeout(int(secs_eff * 1000 * slow))
+            if name == "closing": clip["last"] = time.monotonic() - clock0
             page.evaluate("() => window.__cm.clear()")
 
         def tag(selector, ident):
@@ -330,14 +368,23 @@ def main():
                     if (k && v && !(k.textContent.trim() in out)) out[k.textContent.trim()] = v.textContent.trim(); }); return out; }""", testid)
 
         def check_tokens():
-            """What the captions say about the three tokens, checked on the decoded tokens that are on screen. Raises if any is untrue."""
+            """What the captions say about the three tokens, checked on the decoded tokens that are on screen. Raises if any is untrue.
+            The on-screen mask rewrites iss and aud in the cards (that is its job: those two are real values), so those claims
+            are checked against the mint API's own answer instead — the same tokens the page decoded and shows."""
+            import base64 as _b64
+            minted = page.evaluate("async () => (await (await fetch('/api/mint', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).json()).tokens || []")
+            claims_of = {}
+            for t in minted:
+                tok = t.get("token", ""); part = tok.split(".")[1]; part += "=" * (-len(part) % 4)
+                claims_of[t.get("id") or t.get("kind")] = json.loads(_b64.urlsafe_b64decode(part))
             v, m, u = read_card("token-valid"), read_card("token-mismatched"), read_card("token-untrusted")
             num = lambda x: int(str(x).split()[0])
             problems = []
+            if claims_of.get("valid", {}).get("iss") != cfg["issuer"] or claims_of.get("valid", {}).get("aud") != cfg["audience"]:
+                problems.append("the mint API's valid token has an iss or aud that differ from the configuration")
             if v.get("alg") != "RS256": problems.append("valid alg is not RS256")
             if v.get("kid") not in published: problems.append("valid kid is not in the published key list")
             if v.get("sub") != cfg["validSub"]: problems.append("valid sub is not the configured SPIFFE ID")
-            if v.get("aud") != cfg["audience"] or v.get("iss") != cfg["issuer"]: problems.append("valid aud or iss differ from the configuration")
             if num(v.get("exp", 0)) - num(v.get("iat", 0)) != ttl: problems.append("valid exp - iat is not the configured lifetime")
             for k in ("alg", "kid", "iss", "aud", "iat", "exp"):
                 if m.get(k) != v.get(k): problems.append(f"mismatched differs from valid in {k}")
@@ -432,9 +479,18 @@ def main():
                 closing["col_a_lines"] = [*CLOSING_SLIDE["col_a_lines"][:2], STEPS["sample_closing_bullet"]["text"]]   # the sample never says it got 200 from a gateway
             show_slide(closing, extra=0.0, name="closing")
             ok = True
+            try: result["mask_leaks"] = page.evaluate("() => window.__onscreenMaskLeaks ? window.__onscreenMaskLeaks() : -1")
+            except Exception: result["mask_leaks"] = -1
         except Exception as e:
             result["error"] = f"{type(e).__name__}: {e}"; log("FAILED:", result["error"])
+            try: result["mask_leaks"] = page.evaluate("() => window.__onscreenMaskLeaks ? window.__onscreenMaskLeaks() : -1")
+            except Exception: result["mask_leaks"] = -1
+            if result["mask_leaks"] != 0: ok = False
         finally:
+            log("on-screen mask leaks:", result["mask_leaks"])
+            if result.get("mask_leaks") != 0:
+                result["error"] = result.get("error") or f"mask_leaks is {result.get('mask_leaks')}, not 0: a real value reached the page"
+                ok = False
             result["ok"] = ok
             log("stopping recording")
             if ff is not None:
@@ -450,12 +506,16 @@ def main():
             (WORK / "result.json").write_text(json.dumps(result, indent=1))
             (WORK / "done.flag").write_text("done")
         vpath = page.video.path() if RECORD_PW and page.video else None
+        result["clip"] = clip_window(clip["first"], clip["last"]); log("clip window (s):", result["clip"])
         ctx.close()
         if vpath:
             out = WORK / (("sample-%s.mp4" if SAMPLE else "take-%s.mp4") % PROFILE)
-            trim = max(0.0, T.get("open", T0) - T0 - 0.1)   # cut the pre-roll: the video starts on the opening slide
-            log("trim pre-roll: %.2fs" % trim)
-            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(vpath), "-ss", "%.2f" % trim, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out)], check=True)
+            w = clip_window(clip["first"], clip["last"])
+            log("cut from %.2fs%s" % (w["start"], (" to %.2fs" % w["end"]) if w["end"] else ""))
+            cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(vpath), "-ss", str(w["start"])]
+            if w["end"]: cmd += ["-t", str(round(w["end"] - w["start"], 2))]
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out)]
+            subprocess.run(cmd, check=True)
             log("video:", out)
         print("ok" if ok else "FAILED: " + result.get("error", "?"))
         sys.exit(0 if ok else 1)
