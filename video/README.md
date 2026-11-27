@@ -4,14 +4,14 @@ A silent screen recording of this lab: the public key list, the three test token
 
 Order of work: `SCRIPT.md` (sources first, with the corrections from an independent re-read and a separate review) -> `captions.md` (wording) -> **sample** -> owner review -> live take.
 
-Latest release: [spiffe-issuer-lab-video-2026-11-25](https://github.com/curtismu7/spiffe-issuer-LAB/releases/tag/spiffe-issuer-lab-video-2026-11-25) — two cuts (monitor 1920x1080, laptop 1800x1168), 2:33 each, with real values masked on screen.
+Latest release: [spiffe-issuer-lab-video-2026-11-27](https://github.com/curtismu7/spiffe-issuer-LAB/releases/tag/spiffe-issuer-lab-video-2026-11-27) — two cuts (monitor 1920x1080, laptop 1800x1168), re-recorded after the flicker-free mask fix, with real values masked on screen.
 
 ## Watch the videos (no setup needed)
 
 The published cuts are committed in this repo, fully masked (no real hosts, audiences or tokens; see "Secrets" below):
 
-- [`video/releases/2026-11-25-monitor.mp4`](releases/2026-11-25-monitor.mp4) — 1920x1080, 2:33, for a large display
-- [`video/releases/2026-11-25-laptop.mp4`](releases/2026-11-25-laptop.mp4) — 1800x1168, 2:33, for a laptop screen
+- [`video/releases/2026-11-27-monitor.mp4`](releases/2026-11-27-monitor.mp4) — 1920x1080, for a large display
+- [`video/releases/2026-11-27-laptop.mp4`](releases/2026-11-27-laptop.mp4) — 1800x1168, for a laptop screen
 
 Download them (or clone the repo) and play in any video player — no sound, captions are on screen. The same files are attached to the GitHub release above.
 
