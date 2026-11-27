@@ -214,11 +214,20 @@ def console_check(info):
 # This lab's on-page glue, run with the shared overlay (the old OVERLAY's interval): hide the SPIRE card,
 # blur the token and signature rows. Nothing here is a copy of shared code.
 GLUE = r"""
-setInterval(() => {
-  document.querySelectorAll('h2.card__title').forEach((h) => { if (/SPIRE server control/.test(h.textContent)) { const c = h.closest('.card') || h.closest('section'); if (c) c.style.display = 'none'; } });
-  document.querySelectorAll('.jform__v--token, .jwt').forEach((e) => { e.style.filter = 'blur(7px)'; });
-  document.querySelectorAll('.jdec__h').forEach((h) => { if (/signature/i.test(h.textContent) && h.nextElementSibling) h.nextElementSibling.style.filter = 'blur(7px)'; });
-}, 250);
+(() => {
+  // A stylesheet rule cannot be wiped by React re-renders, so there is nothing to re-apply and nothing to flicker.
+  const attach = () => {
+    const st = document.createElement('style');
+    st.textContent = '.jtok--jwt3 { filter: blur(6px); }';
+    document.head.appendChild(st);   // a stylesheet rule cannot be wiped by React re-renders: nothing to re-apply, nothing to flicker
+    const hide = () => document.querySelectorAll('h2.card__title').forEach((h) => { if (/SPIRE server control/.test(h.textContent)) { const c = h.closest('.card') || h.closest('section'); if (c) c.style.display = 'none'; } });
+    const sigRows = () => document.querySelectorAll('.jdec__h').forEach((h) => { const n = h.nextElementSibling; if (/^signature$/i.test(h.textContent.trim()) && n && !n.dataset.sigm) { n.dataset.sigm = '1'; n.style.filter = 'blur(6px)'; } });
+    const apply = () => { hide(); sigRows(); };
+    new MutationObserver(apply).observe(document.body, { childList: true, subtree: true });
+    apply();
+  };
+  if (document.readyState !== 'loading' && document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
+})();
 """
 
 def main():
@@ -405,7 +414,7 @@ def main():
             page.wait_for_timeout(600)
             if page.evaluate("() => [...document.querySelectorAll('h2.card__title')].some((h) => /SPIRE server control/.test(h.textContent) && h.offsetParent !== null)"):
                 raise RuntimeError("the SPIRE card is still visible (the take hides it)")
-            show_slide(OPENING_SLIDE, extra=0.0, name="opening")
+            show_slide(OPENING_SLIDE, name="opening")
             page.evaluate("() => window.scrollTo(0, 0)")
 
             bubble("intro", "[data-testid=sim-banner]", sample_key="sample_intro", prefer="below")
@@ -477,7 +486,7 @@ def main():
             if SAMPLE:   # the sample never claims a live run
                 closing["lead"] = STEPS["sample_closing_lead"]["text"]
                 closing["col_a_lines"] = [*CLOSING_SLIDE["col_a_lines"][:2], STEPS["sample_closing_bullet"]["text"]]   # the sample never says it got 200 from a gateway
-            show_slide(closing, extra=0.0, name="closing")
+            show_slide(closing, name="closing")
             ok = True
             try: result["mask_leaks"] = page.evaluate("() => window.__onscreenMaskLeaks ? window.__onscreenMaskLeaks() : -1")
             except Exception: result["mask_leaks"] = -1
